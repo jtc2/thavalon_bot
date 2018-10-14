@@ -10,7 +10,7 @@ def get_role_description(role):
 		'Tristan'		: 'The person you see is also Good and is aware that you are Good.',
 		'Iseult'		: 'The person you see is also Good and is aware that you are Good.',
 		'Merlin' 		: 'You know which people have Evil roles, but not who has any specific role.',
-		'Percival'		: 'The two people you see are either Merlin or Morgana.',
+		'Percival'		: 'You know which people have the Merlin or Morgana roles, but not specifically who has each.',
 		'Lancelot'		: 'You may play Reversal cards while on missions.',
 		'Guinevere'		: 'You see three connections between pairs of people. Two of those connections are true, and represent actual connections between Information roles. The other connection is false.',
 		'Arthur'		: 'After you are on a mission that Fails, you may declare as Arthur, establishing that you are Good for the remainder of the game.\n Once you do this, you are no longer able to go on missions, but your voting power is doubled.',
@@ -26,7 +26,7 @@ def get_role_description(role):
 # - Lancelot: no information
 # - Arthur: no information?
 # - Guinevere: too complicated to generate here
-# - Colgrevance: names are gathered here, roles are gathered after Guinevere
+# - Colgrevance: name,role (evil has an update later to inform them about the presence of a Colgrevance)
 def get_role_information(my_player,players):
 	return { 
 		'Tristan' 		: ['{} is Iseult.'.format(player.name) for player in players if player.role is 'Iseult'],
@@ -119,10 +119,11 @@ def main():
 	evil_roles = ['Mordred','Morgana','Maelegant']
 
 	# roles added in larger games
-	# guinevere on hold
+	# arthur and guinevere on hold until mechanics devised
 	if num_players > 6:
 		# good_roles.append('Guinevere')
-		good_roles.append('Arthur')
+		# good_roles.append('Arthur')
+		pass
 
 	if num_players > 7:
 		evil_roles.append('Agravaine')
@@ -134,6 +135,8 @@ def main():
 	evil_roles_in_game = random.sample(evil_roles,num_evil)
 
 	# remove lone lovers
+	# this is temporarily suspended so that games of up to 8 can be played without runtime errors (due to lack of good roles implemented)
+	'''
 	if sum(gr in ['Tristan','Iseult'] for gr in good_roles_in_game) == 1: 
 		available_roles = set(good_roles)-set(good_roles_in_game)-set(['Tristan','Iseult']) 
 		if 'Tristan' in good_roles_in_game:
@@ -141,7 +144,7 @@ def main():
 		if 'Iseult' in good_roles_in_game:
 			good_roles_in_game.remove('Iseult') 
 		good_roles_in_game.append(random.sample(set(available_roles),1)[0])
-
+	'''
 
 	# roles after validation
 	print(good_roles_in_game)
@@ -180,5 +183,8 @@ def main():
 	for player in players: 
 		print(bar+'You are '+player.role+' ['+player.team+' '+player.type+']\n'+bar+get_role_description(player.role)+'\n'+bar+'\n'.join(player.info)+'\n'+bar)
 
+	print(player_of_role)
+
+	
 if __name__ == "__main__":
 	main()
