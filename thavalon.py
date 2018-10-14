@@ -1,81 +1,428 @@
 import random
+from player_info import get_player_info
 
 MAX_NUM_PLAYERS = 10
 MIN_NUM_PLAYERS = 5
+num_players_to_mission = {
+    1: [1, 1, 1, 1, 1],
+    2: [2, 2, 2, 2, 2],
+    3: [2, 2, 2, 2, 2],
+    4: [2, 2, 2, 2, 2],
+    5: [2, 3, 2, 3, 3],
+    6: [2, 3, 4, 3, 4],
+    7: [2, 3, 3, 4, 4],
+    8: [3, 4, 4, 5, 5],
+    9: [3, 4, 4, 5, 5],
+    10: [3, 4, 4, 5, 5],
+}
+num_players_to_num_proposals = {
+    1: 2,
+    2: 2,
+    3: 2,
+    4: 2,
+    5: 3,
+    6: 3,
+    7: 4,
+    8: 4,
+    9: 4,
+    10: 5,
+}
 
 
-async def thavalon(client, message):
-    # setup and play game
-    name_to_player = {}
-    started = await join_game(client, message, name_to_player)
-    if not started:
-        await client.send_message(message.channel, "Game stopped")
-        return
+class THavalon:
+    def __init__(self, client):
+        self.client = client
+        self.name_to_player = {}
+        self.player_to_name = {}
+        self.order = []
+        self.proposer_idx = -2
+        self.num_players = 0
+        self.mission_num = 0  # 0 indexed
+        self.game_running = False
+        self.game_state = "CREATE"  # can be either CREATE, PROPOSE, VOTE or PLAY
+        self.name_to_info = {}
+        self.num_passes = 0
+        self.num_failures = 0
+        self.game_over = False
+        # handle mission 1 proposals separately
+        self.first_proposal = []
+        self.second_proposal = []
+        # handle other proposals
+        self.current_proposal = []
+        self.num_proposals = 0
+        # for mission results
+        self.name_to_vote = {}
+        # for playing mission
+        self.going_proposal = []
+        self.num_success = 0
+        self.num_fail = 0
+        self.num_reverse = 0
+        self.num_qb = 0
+        self.name_to_play = {}
 
-    # TODO: Send role info
+    async def handle_public_message(self, message):
+        # handle general messages that can be done anytime
+        if message.content == '!agravainemedaddy':
+            await self.client.send_message(message.author, "No {0.author.mention}".format(message))
+            return
+        elif message.content == "!cookiejar":
+            await self.client.send_message(message.channel, "The cookie jar is over there Meg.")
+            return
 
-    # at this point, game has been started
-    await client.send_message(message.channel, "Creating game! Check your messages for role info.")
+        if not self.game_running:
+            if message.content == "!thavalon":
+                self.game_running = True
+                await self.client.send_message(message.channel,
+                                               "A new game has been started. Commands:\n"
+                                               "\t\t!join to join the game\n"
+                                               "\t\t!players to view current players\n"
+                                               "\t\t!start to begin game\n"
+                                               "\t\t!stop to stop game\n")
+            else:
+                await self.client.send_message(message.channel, "No game running, type !thavalon to start a game")
+            return
 
-    # and actually play the game
-    await play_game(client, message, name_to_player)
+        if self.game_running:
+            if message.content == "!thavalon":
+                await self.client.send_message(message.channel, "Game in progress. Type !stop to stop game.")
+            elif message.content == "!order" and self.game_state != "CREATE":
+                order_string = "Proposal Order:\n"
+                order_string += "\n".join(["\t\t{}".format(name) for name in self.order])
+                await self.client.send_message(message.channel, order_string)
+            elif self.game_state == "CREATE":
+                await self.handle_create_message(message)
+            elif self.game_state == "PROPOSE":
+                await self.handle_propose_message(message)
 
-    # finally, print game info
-    # TODO: Implement
+    async def handle_private_message(self, message):
+        print("MESSAGE REVEIVED: {} from {} in state {}".format(message.content, message.author, self.game_state))
+        if self.game_state == "VOTE":
+            await self.handle_received_vote(message)
+        elif self.game_state == "PLAY":
+            await self.handle_received_play(message)
 
-
-async def join_game(client, message, name_to_player):
-    await client.send_message(message.channel,
-                              "A new game has been started. Commands:\n" \
-                              "\t!join to join the game\n" \
-                              "\t!players to view current players\n"  \
-                              "\t!start to begin game\n" \
-                              "\t!stop to stop game\n")
-    started = False
-    while not started:
-        reply = await client.wait_for_message(channel=message.channel)
-        if reply.content == "!join":
+    # handle messages related to game creation
+    async def handle_create_message(self, message):
+        self.public_channel = message.channel
+        if message.content == "!join":
             # check number of players
-            if len(name_to_player) >= MAX_NUM_PLAYERS:
-                await client.send_message(message.channel, "Game already has {} players, unable to add more".format(MAX_NUM_PLAYERS))
-                continue
+            if len(self.name_to_player) >= MAX_NUM_PLAYERS:
+                await self.client.send_message(message.channel,
+                                               "Game already has {} players, unable to add more".format(MAX_NUM_PLAYERS))
+                return
 
             # check is new player
-            if reply.author.display_name in name_to_player:
-                await client.send_message(message.channel, "{} is already in the game!".format(reply.author.display_name))
-                continue
+            if message.author.display_name in self.name_to_player:
+                await self.client.send_message(message.channel,
+                                        "{} is already in the game!".format(message.author.display_name))
+                return
 
             # add new player
-            name_to_player[reply.author.display_name] = reply.author
-            await client.send_message(message.channel, "{} has joined the game!".format(reply.author.display_name))
-        elif reply.content == "!players":
-            players_string = "Players in game:\n"
-            players_string += "\n".join(["\t{}".format(name) for name in name_to_player])
-            await client.send_message(message.channel, players_string)
-        elif reply.content == "!start":
+            # name_to_player[reply.author.display_name + str(len(name_to_player))] = reply.author
+            self.name_to_player[message.author.display_name] = message.author
+            self.player_to_name[message.author] = message.author.display_name
+            await self.client.send_message(message.channel, "{} has joined the game!".format(message.author.display_name))
+        elif message.content == "!start":
             # check number of players
-            if len(name_to_player) < MIN_NUM_PLAYERS:
-                await client.send_message(message.channel, "Need at least {} players to play".format(MIN_NUM_PLAYERS))
-                continue
+            # if len(self.name_to_player) < MIN_NUM_PLAYERS:
+            #    await self.client.send_message(message.channel, "Need at least {} players to play".format(MIN_NUM_PLAYERS))
+            #    continue
 
             # start game if possible
-            started = True
-            break
-        elif reply.content == "!stop":
-            break
-        elif reply.content == "!test":
-            for i in range(5):
-                name_to_player["bot{}".format(i)] = "bot{}".format(i)
-    return started
+            self.game_state = "PROPOSE"
+            self.mission_num = 0
+            self.order = list(self.name_to_player.keys())
+            random.shuffle(self.order)
+            # TODO :remove
+            if len(self.order) == 1:
+                self.order.append(self.order[0])
+
+            await self.assign_player_info()
+            await self.print_game_start_info(message)
+        elif message.content == "!players":
+            players_string = "Players in game:\n"
+            players_string += "\n".join(["\t{}".format(name) for name in self.name_to_player])
+            await self.client.send_message(message.channel, players_string)
+
+    async def assign_player_info(self):
+        self.role_to_player = get_player_info(self.order)
+        for _, player_info in self.role_to_player.items():
+            player = self.name_to_player[player_info.name]
+            self.name_to_info[player_info.name] = player_info
+            await self.client.send_message(player, player_info.string)
+
+    async def print_game_start_info(self, message):
+        game_beginning_message = "The game has begun. Please check your messages for your role info.\n\n" \
+                                 "Type !order to see the proposal order.\n\n" \
+                                 "{} and {} will be proposing teams for the first mission.\n" \
+                                 "{}, please make your proposal." \
+                                 .format(self.order[-2], self.order[-1], self.order[-2])
+        await self.client.send_message(message.channel, game_beginning_message)
+
+    # handle messages during PROPOSE state
+    async def handle_propose_message(self, message):
+        print("GOT PEOPOSAL: {}".format(message.content))
+        if message.content.startswith("!propose") and \
+           message.author.display_name == self.order[self.proposer_idx]:
+            num_on_mission = num_players_to_mission[len(self.order)][self.mission_num]
+            proposed_str = message.content.replace("!propose ", "")
+            proposed_names = proposed_str.split(" ")
+            if len(proposed_names) != num_on_mission:
+                await self.client.send_message(message.channel, "Proposal must have exactly {} players. Propose again.".format(num_on_mission))
+                return
+            for name in proposed_names:
+                if name not in self.name_to_player:
+                    await self.client.send_message(message.channel, "Invalid players - all players must be in game. Propose again.")
+                    return
+            if self.proposer_idx == -2:
+                # if first proposal
+                self.first_proposal = proposed_names
+                await self.client.send_message(message.channel,
+                                               "{} has proposed:\n{}\n{}, make your proposal."
+                                               .format(self.order[-2],
+                                                       "".join("\t\t{}\n".format(name) for name in self.first_proposal),
+                                                       self.order[-1])
+                                               )
+                self.proposer_idx = -1
+            elif self.proposer_idx == -1:
+                self.second_proposal = proposed_names
+                await self.client.send_message(message.channel,
+                                               "{} has proposed:\n{}\n\nCheck your messages to vote."
+                                               .format(self.order[-1],
+                                                       "".join("\t\t{}\n".format(name) for name in self.second_proposal),
+                                                       )
+                                               )
+                # don't update proposer idx - it updates after round played
+                self.game_state = "VOTE"
+                await self.send_vote_requests(message, await self.get_first_mission_vote_string())
+            else:  # not in mission 1
+                self.current_proposal = proposed_names
+                if self.num_proposals == num_players_to_num_proposals[len(self.order)]:
+                    # last proposal
+                    self.going_proposal = self.current_proposal
+                    await self.client.send_message(message.channel,
+                                                   "{} has proposed:\n{}\n"
+                                                   "This is the final mission of the round, it must go.\n"
+                                                   "If you are on the mission, check your messages to play a card.\n"
+                                                   .format(self.order[self.proposer_idx],
+                                                           "".join("\t\t{}\n".format(name) for name in self.current_proposal),
+                                                           ))
+                    self.game_state = "PLAY"
+                    await self.send_play_requests()
+                else:
+                    await self.client.send_message(message.channel,
+                                               "{} has proposed:\n{}\n\nCheck your messages to vote."
+                                               .format(self.order[self.proposer_idx],
+                                                       "".join("\t\t{}\n".format(name) for name in self.current_proposal),
+                                                       ))
+                    self.game_state = "VOTE"
+                    await self.send_vote_requests(message, await self.get_mission_vote_string())
+
+    async def get_mission_vote_string(self):
+        return "You are voting whether to send {}'s proposal of:\n{}\n" \
+               "Type !upvote to approve it.\n" \
+               "Type !downvote to reject it.\n" \
+               .format(self.order[self.proposer_idx], "".join("\t\t{}\n".format(name) for name in self.current_proposal))
 
 
-async def play_game(client, message, name_to_player):
-    player_order = random.shuffle(list(name_to_player.keys()))
+    async def get_first_mission_vote_string(self):
+        return "You are voting for which mission 1 proposal to send.\n\n" \
+               "Type !upvote to vote for {}'s proposal:\n\t\t{}.\n" \
+               "Type !downvote to vote for {}'s proposal of:\n\t\t{}.\n" \
+               .format(self.order[-2], ", ".join(self.first_proposal), self.order[-1], ", ".join(self.second_proposal))
 
+    async def send_vote_requests(self, message, request_string):
+        for player in self.player_to_name:
+            await self.client.send_message(player, request_string)
 
+    async def handle_received_vote(self, message):
+        if message.author not in self.player_to_name:
+            return
 
-    finished = False
-    while not finished:
-        reply = await client.wait_for_message(channel=message.channel)
-        if reply.content == "!stop":
-            break
+        if message.author.display_name in self.name_to_vote:
+            await self.client.send_message(message.author, "You already voted, unable to change vote")
+            return
+        elif message.content == "!upvote":
+            self.name_to_vote[self.player_to_name[message.author]] = True
+            await self.client.send_message(message.author, "You upvoted.")
+        elif message.content == "!downvote":
+            self.name_to_vote[self.player_to_name[message.author]] = False
+            await self.client.send_message(message.author, "You downvoted.")
+        else:
+            await self.client.send_message(message.author, "Invalid vote, please vote again.")
+
+        if len(self.name_to_vote) == len(self.order):
+            print("VOTES ARE IN: {}".format(self.name_to_vote))
+            await self.determine_vote_result()
+
+    async def determine_vote_result(self):
+        accepters = []
+        rejecters = []
+        for name, vote in self.name_to_vote.items():
+            if vote:
+                accepters.append(name)
+            else:
+                rejecters.append(name)
+        vote_result_string = "The votes are in!\n" \
+                             "Upvote:\n{}" \
+                             "Downvote:\n{}" \
+                             .format("".join("\t\t{}\n".format(name) for name in accepters),
+                                     "".join("\t\t{}\n".format(name) for name in rejecters))
+        # reset voters
+        self.name_to_vote = {}
+
+        mission_going_string = "\n\n{} are going on the mission! Check your messages to vote"
+        if self.mission_num == 0:
+            # handle first mission
+            if len(accepters) > len(rejecters):
+                self.going_proposal = self.first_proposal
+                vote_result_string += mission_going_string.format(", ".join(self.first_proposal))
+            else:
+                self.going_proposal = self.second_proposal
+                vote_result_string += mission_going_string.format(", ".join(self.second_proposal))
+            self.game_state = "PLAY"
+
+            await self.client.send_message(self.public_channel, vote_result_string)
+            await self.send_play_requests()
+        else:
+            # all other missions
+            if len(accepters) > len(rejecters):
+                self.going_proposal = self.current_proposal
+                vote_result_string += "The mission is approved!\n"
+                vote_result_string += mission_going_string.format(", ".join(self.going_proposal))
+                self.game_state = "PLAY"
+
+                await self.client.send_message(self.public_channel, vote_result_string)
+                await self.send_play_requests()
+            else:
+                vote_result_string += "The mission is rejected.\n\n"
+                self.game_state = "PROPOSE"
+                self.proposer_idx = (self.proposer_idx + 1) % len(self.order)
+                self.current_proposal = []
+                self.num_proposals += 1
+                vote_result_string += "{}, please propose a {} player mission. This is propoal {} of {}." \
+                                      .format(self.order[self.proposer_idx],
+                                              num_players_to_mission[len(self.order)][self.mission_num],
+                                              self.num_proposals,
+                                              num_players_to_num_proposals[len(self.order)])
+                await self.client.send_message(self.public_channel, vote_result_string)
+
+    async def send_play_requests(self):
+        print("SENDING PLAY REQUESTS TO: {}".format(self.going_proposal))
+        for name in self.going_proposal:
+            await self.client.send_message(self.name_to_player[name],
+                                           "You are going on a mission! Type !success, !reverse, or !fail to play a card.")
+
+    async def handle_received_play(self, message):
+        name = self.player_to_name[message.author]
+        print("GOING PROPOSAL: {}".format(self.going_proposal))
+        print("NAME: {}".format(name))
+        print()
+        if name not in self.going_proposal:
+            return
+        print("{} has sent {}".format(name, message.content))
+
+        if name in self.name_to_play:
+            await self.client.send_message(message.author, "You have already voted.")
+            return
+        elif message.content == "!success":
+            self.num_success += 1
+            await self.client.send_message(message.author, "You have played a success!")
+        elif message.content == "!fail":
+            if self.name_to_info[name].team == "Good":
+                await self.client.send_message(message.author, "You can not play fails, try again.")
+                return
+            self.num_fail += 1
+            await self.client.send_message(message.author, "You have played a fail!")
+        elif message.content == "!reverse":
+            if self.name_to_info[name].role != "Lancelot" and self.name_to_info[name].role != "Maelegant":
+                await self.client.send_message(message.author, "You can not play reverse, try again.")
+                return
+            self.num_reverse += 1
+            await self.client.send_message(message.author, "You have played a reverse!")
+        elif message.content == "!qb":
+            self.num_qb += 1
+            await self.client.send_message(message.author, ":heart: but you still need to vote.")
+            return
+        else:
+            await self.client.send_message(message.author, "Invalid play, try again.")
+            return
+
+        self.name_to_play[name] = message.content
+
+        if len(self.name_to_play) == len(self.going_proposal):
+            print("NAME TO PLAY: {}".format(self.name_to_play))
+            print("S: {}, F: {}, R: {}, QB: {}".format(self.num_success, self.num_fail, self.num_reverse, self.num_qb))
+            await self.show_played_mission()
+
+    async def show_played_mission(self):
+        result_str = "The following team went on a mission:\n{}\nThe cards played were:\n".format("".join("\t\t{}\n".format(name) for name in self.going_proposal))
+
+        result = True
+        self.num_reverse = self.num_reverse % 2
+        if self.mission_num != 3 or len(self.order) < 7:
+            if self.num_fail > 0 and self.num_reverse == 0:
+                result = False
+            if self.num_fail == 0 and self.num_reverse == 1:
+                result = False
+        elif self.mission_num == 3 and len(self.order) >= 7:
+            if self.num_fail >= 2 and self.num_reverse == 0:
+                result = False
+            if self.num_fail == 1 and self.num_reverse == 1:
+                result = False
+
+        cards = []
+        for i in range(self.num_fail):
+            cards.append("Fail")
+        for i in range(self.num_success):
+            cards.append("Success")
+        for i in range(self.num_reverse):
+            cards.append("Reverse")
+        for i in range(self.num_qb):
+            cards.append("QUESTING BEAST WAS HERE :heart:")
+
+        random.shuffle(cards)
+        for card in cards:
+            result_str += "\t\t{}\n".format(card)
+        result_str += "\nThe result of this mission is {}.\n\n".format("PASS" if result else "FAIL")
+
+        if result:
+            self.num_passes += 1
+        else:
+            self.num_failures += 1
+
+        if self.num_passes == 3:
+            await self.client.send_message(self.public_channel, "The game has ended! The \"Good\" team has won!")
+            self.game_running = False
+            return
+        if self.num_failures == 3:
+            await self.client.send_message(self.public_channel, "The game has ended! The \"Evil\" team has won!")
+            self.game_running = False
+            return
+
+        await self.client.send_message(self.public_channel, result_str)
+
+        # reset stuff
+        self.going_proposal = []
+        self.num_fail = 0
+        self.num_success = 0
+        self.num_reverse = 0
+        self.num_qb = 0
+        self.name_to_play = {}
+        self.mission_num += 1
+        self.proposer_idx = (self.proposer_idx + 1) % len(self.order)
+        self.current_proposal = []
+        self.num_proposals = 1
+
+        # send message starting next round
+        if self.mission_num == 5:
+            await self.client.send_message(self.public_channel, "The game has ended. Questing beast wins!")
+            self.game_running = False
+            return
+        self.game_state = "PROPOSE"
+        await self.client.send_message(self.public_channel,
+                                 "Mission {} has {} players.\n{} is proposing first.\nThere are {} proposals this round."
+                                 .format(self.mission_num + 1,
+                                         num_players_to_mission[len(self.order)][self.mission_num],
+                                         self.order[self.proposer_idx],
+                                         num_players_to_num_proposals[len(self.order)]))

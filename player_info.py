@@ -88,13 +88,8 @@ class Player():
 	def generate_info(self,players):
 		pass
 
-def main(): 
-	if not (6 <= len(sys.argv) <= 11):
-		print('ERROR: Invalid number of players.')
-		exit(1)
-	player_names = sys.argv[1:]
+def get_player_info(player_names):
 	num_players = len(player_names)
-	player_names = list(set(sys.argv[1:])) # removes duplicates
 	if len(player_names) != num_players:
 		print('ERROR: Duplicate player names.')
 		exit(1)
@@ -181,9 +176,9 @@ def main():
 
 	bar = '----------------------------------------\n'
 	for player in players: 
-		print(bar+'You are '+player.role+' ['+player.team+' '+player.type+']\n'+bar+get_role_description(player.role)+'\n'+bar+'\n'.join(player.info)+'\n'+bar)
+		player.string = bar+'You are '+player.role+' ['+player.team+' '+player.type+']\n'+bar+get_role_description(player.role)+'\n'+bar+'\n'.join(player.info)+'\n'+bar
 
-	print(player_of_role)
+	return player_of_role
 
 	
 if __name__ == "__main__":
