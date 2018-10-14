@@ -1,12 +1,12 @@
-import copy 
-import os 
-import random 
+import copy
+import os
+import random
 import shutil
-import sys 
+import sys
 
 # get_role_descriptions - this is called when information files are generated.
 def get_role_description(role):
-	return { 
+	return {
 		'Tristan'		: 'The person you see is also Good and is aware that you are Good.',
 		'Iseult'		: 'The person you see is also Good and is aware that you are Good.',
 		'Merlin' 		: 'You know which people have Evil roles, but not who has any specific role.',
@@ -18,22 +18,22 @@ def get_role_description(role):
 		'Morgana'		: 'You appear like Merlin to Percival. \nLike other Evil characters, you know who else is Evil (except Colgrevance).',
 		'Maelegant'		: 'You may play Reversal cards while on missions. \nLike other Evil characters, you know who else is Evil (except Colgrevance).',
 		'Agravaine'		: 'You must play Fail cards while on missions. \nIf you are on a mission that Succeeds, you may declare as the Enforcer to cause it to Fail instead. \nLike other Evil characters, you know who else is Evil (except Colgrevance).',
-		'Colgrevance' 	: 'You know not only who else is Evil, but what role each other Evil player possess. \nEvil players know that there is a Colgrevance, but do not know that it is you.', 
+		'Colgrevance' 	: 'You know not only who else is Evil, but what role each other Evil player possess. \nEvil players know that there is a Colgrevance, but do not know that it is you.',
 	}.get(role,'ERROR: No description available.')
 
-# get_role_information: this is called to populate information files 
+# get_role_information: this is called to populate information files
 # blank roles:
 # - Lancelot: no information
 # - Arthur: no information?
 # - Guinevere: too complicated to generate here
 # - Colgrevance: name,role (evil has an update later to inform them about the presence of a Colgrevance)
 def get_role_information(my_player,players):
-	return { 
+	return {
 		'Tristan' 		: ['{} is Iseult.'.format(player.name) for player in players if player.role is 'Iseult'],
 		'Iseult' 		: ['{} is Tristan.'.format(player.name) for player in players if player.role is 'Tristan'],
-		'Merlin' 		: ['{} is Evil.'.format(player.name) for player in players if player.team is 'Evil' and player.role is not 'Mordred'],
+		'Merlin' 		: ['{} is Evil.'.format(player.name) for player in players if ((player.team is 'Evil' and player.role is not 'Mordred') or player.role is 'Lancelot')],
 		'Percival'		: ['{} is Merlin or Morgana.'.format(player.name) for player in players if player.role is 'Merlin' or player.role is 'Morgana'],
-		'Lancelot'		: [],
+        'Lancelot'		: [],
 		'Arthur'		: [],
 		'Guinevere'		: [],
 		'Mordred'	 	: ['{} is Evil.'.format(player.name) for player in players if player.team is 'Evil' and player is not my_player and player.role is not 'Colgrevance'],
@@ -44,7 +44,7 @@ def get_role_information(my_player,players):
 	}.get(my_player.role,[])
 
 def get_role_type(role):
-	return { 
+	return {
 		'Tristan'		: 'Information',
 		'Iseult'		: 'Information',
 		'Merlin'		: 'Information',
@@ -61,18 +61,18 @@ def get_role_type(role):
 
 class Player():
 	# players have the following traits
-	# name: the name of the player as fed into system arguments 
+	# name: the name of the player as fed into system arguments
 	# role: the role the player possesses
-	# team: whether hte player is good or evil 
-	# type: information or ability 
+	# team: whether hte player is good or evil
+	# type: information or ability
 	# seen: a list of what they will see
 	# modifier: the random modifier this player has [NOT CURRENTLY UTILIZED]
-	def __init__(self,name): 
-		self.name = name 
-		self.type = None 
-		self.role = None 
-		self.team = None 
-		self.modifier = None 
+	def __init__(self,name):
+		self.name = name
+		self.type = None
+		self.role = None
+		self.team = None
+		self.modifier = None
 		self.info = []
 
 	def set_role(self, role):
@@ -101,13 +101,13 @@ def get_player_info(player_names):
 		players.append(player)
 
 	# number of good and evil roles
-	if num_players < 7: 
-		num_evil = 2 
+	if num_players < 7:
+		num_evil = 2
 	elif num_players < 9:
 		num_evil = 3
-	else: 
+	else:
 		num_evil = 4
-	num_good = num_players - num_evil 
+	num_good = num_players - num_evil
 
 	# establish available roles
 	good_roles = ['Merlin','Percival','Lancelot','Tristan','Iseult']
@@ -145,7 +145,7 @@ def get_player_info(player_names):
 	print(good_roles_in_game)
 	print(evil_roles_in_game)
 
-	# role assignment 
+	# role assignment
 	random.shuffle(players)
 
 	good_players = players[:num_good]
@@ -159,7 +159,7 @@ def get_player_info(player_names):
 		gp.set_team('Good')
 		player_of_role[new_role] = gp
 
-	for ep in evil_players: 
+	for ep in evil_players:
 		new_role = evil_roles_in_game.pop()
 		ep.set_role(new_role)
 		ep.set_team('Evil')
@@ -175,11 +175,11 @@ def get_player_info(player_names):
 			ep.add_info(['Colgrevance lurks in the shadows'])
 
 	bar = '----------------------------------------\n'
-	for player in players: 
+	for player in players:
 		player.string = bar+'You are '+player.role+' ['+player.team+' '+player.type+']\n'+bar+get_role_description(player.role)+'\n'+bar+'\n'.join(player.info)+'\n'+bar
 
 	return player_of_role
 
-	
+
 if __name__ == "__main__":
 	main()

@@ -300,7 +300,7 @@ class THavalon:
                 self.proposer_idx = (self.proposer_idx + 1) % len(self.order)
                 self.current_proposal = []
                 self.num_proposals += 1
-                vote_result_string += "{}, please propose a {} player mission. This is propoal {} of {}." \
+                vote_result_string += "{}, please propose a {} player mission. This is proposal {} of {}." \
                                       .format(self.order[self.proposer_idx],
                                               num_players_to_mission[len(self.order)][self.mission_num],
                                               self.num_proposals,
@@ -326,6 +326,9 @@ class THavalon:
             await self.client.send_message(message.author, "You have already voted.")
             return
         elif message.content == "!success":
+            if self.name_to_info[name].role == "Agravaine":
+                await self.client.send_message(message.author, "Agravaine must play fails.")
+                return
             self.num_success += 1
             await self.client.send_message(message.author, "You have played a success!")
         elif message.content == "!fail":
@@ -358,6 +361,16 @@ class THavalon:
     async def show_played_mission(self):
         result_str = "The following team went on a mission:\n{}\nThe cards played were:\n".format("".join("\t\t{}\n".format(name) for name in self.going_proposal))
 
+        cards = []
+        for i in range(self.num_fail):
+            cards.append("Fail")
+        for i in range(self.num_success):
+            cards.append("Success")
+        for i in range(self.num_reverse):
+            cards.append("Reverse")
+        for i in range(self.num_qb):
+            cards.append("QUESTING BEAST WAS HERE :heart:")
+
         result = True
         self.num_reverse = self.num_reverse % 2
         if self.mission_num != 3 or len(self.order) < 7:
@@ -371,20 +384,30 @@ class THavalon:
             if self.num_fail == 1 and self.num_reverse == 1:
                 result = False
 
-        cards = []
-        for i in range(self.num_fail):
-            cards.append("Fail")
-        for i in range(self.num_success):
-            cards.append("Success")
-        for i in range(self.num_reverse):
-            cards.append("Reverse")
-        for i in range(self.num_qb):
-            cards.append("QUESTING BEAST WAS HERE :heart:")
-
         random.shuffle(cards)
         for card in cards:
             result_str += "\t\t{}\n".format(card)
-        result_str += "\nThe result of this mission is {}.\n\n".format("PASS" if result else "FAIL")
+
+        await self.client.send_message(self.public_channel, result_str)
+
+        def agravaine_check(message):
+            if message.content != "!declare":
+                return False
+            if self.name_to_info[message.author.display_name].role != "Agravaine":
+                return False
+            return True
+
+        if "Agravaine" in self.role_to_player and result and self.num_fail > 0:
+            await self.client.send_message(self.public_channel, "If you are Agravaine and would like to declare, type !declare in chat. You have 10 seconds.")
+            message = await self.client.wait_for_message(timeout=10, channel=self.public_channel, check=agravaine_check)
+            if message is None:
+                await self.client.send_message(self.public_channel, "No Agravaine has declared.")
+            else:
+                await self.client.send_message(self.public_channel, "{} has declared as Agravaine!".format(message.author.display_name))
+                result = False
+
+        result_str = "The result of this mission is {}.\n\n".format("PASS" if result else "FAIL")
+        await self.client.send_message(self.public_channel, result_str)
 
         if result:
             self.num_passes += 1
@@ -400,7 +423,6 @@ class THavalon:
             self.game_running = False
             return
 
-        await self.client.send_message(self.public_channel, result_str)
 
         # reset stuff
         self.going_proposal = []

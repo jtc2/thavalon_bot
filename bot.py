@@ -12,6 +12,12 @@ async def on_message(message):
     if not message.content.startswith("!"):
         return
 
+    if message.content == "!newgame" and "@admin" in [role.name for role in message.author.roles]:
+        client.send_message(message.channel, "Starting new game!")
+        global game
+        game = THavalon(client)
+        return
+
     if message.channel.is_private:
         await game.handle_private_message(message)
     else:
