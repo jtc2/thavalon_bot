@@ -12,7 +12,8 @@ def get_role_description(role):
 		'Merlin' 		: 'You know which people have Evil roles, but not who has any specific role.',
 		'Percival'		: 'You know which people have the Merlin or Morgana roles, but not specifically who has each.',
 		'Lancelot'		: 'You may play Reversal cards while on missions.',
-		'Guinevere'		: 'You see three connections between pairs of people. Two of those connections are true, and represent actual connections between Information roles. The other connection is false.',
+		'Guinevere'		: 'Whenever you are not on a mission, you may select one player on the mission and see what card they played.',
+		# 'Guinevere'		: 'You see three connections between pairs of people. Two of those connections are true, and represent actual connections between Information roles. The other connection is false.',
 		'Arthur'		: 'After you are on a mission that Fails, you may declare as Arthur, establishing that you are Good for the remainder of the game.\n Once you do this, you are no longer able to go on missions, but your voting power is doubled.',
 		'Mordred' 		: 'You are hidden from all Good Information roles. \nLike other Evil characters, you know who else is Evil (except Colgrevance).',
 		'Morgana'		: 'You appear like Merlin to Percival. \nLike other Evil characters, you know who else is Evil (except Colgrevance).',
@@ -51,7 +52,7 @@ def get_role_type(role):
 		'Percival'		: 'Information',
 		'Lancelot'		: 'Ability',
 		'Arthur'		: 'Ability',
-		'Guinevere'		: 'Information',
+		'Guinevere'		: 'Ability',
 		'Mordred'		: 'Information',
 		'Morgana'		: 'Information',
 		'Maelegant'		: 'Ability',
@@ -113,6 +114,12 @@ def get_player_info(player_names):
 	good_roles = ['Merlin','Percival','Lancelot','Tristan','Iseult']
 	evil_roles = ['Mordred','Morgana','Maelegant']
 
+	if num_players == 2:
+		good_roles = ['Guinevere']
+		evil_roles = ['Maelegant']
+		num_good = 1
+		num_evil = 1
+
 	# roles added in larger games
 	# arthur and guinevere on hold until mechanics devised
 	if num_players > 6:
@@ -122,6 +129,7 @@ def get_player_info(player_names):
 
 	if num_players > 7:
 		evil_roles.append('Agravaine')
+		good_roles.append('Guinevere')
 
 	if num_players == 10:
 		evil_roles.append('Colgrevance')
@@ -131,15 +139,13 @@ def get_player_info(player_names):
 
 	# remove lone lovers
 	# this is temporarily suspended so that games of up to 8 can be played without runtime errors (due to lack of good roles implemented)
-	'''
-	if sum(gr in ['Tristan','Iseult'] for gr in good_roles_in_game) == 1: 
+	if sum(gr in ['Tristan','Iseult'] for gr in good_roles_in_game) == 1:
 		available_roles = set(good_roles)-set(good_roles_in_game)-set(['Tristan','Iseult']) 
 		if 'Tristan' in good_roles_in_game:
 			good_roles_in_game.remove('Tristan') 
 		if 'Iseult' in good_roles_in_game:
 			good_roles_in_game.remove('Iseult') 
 		good_roles_in_game.append(random.sample(set(available_roles),1)[0])
-	'''
 
 	# roles after validation
 	print(good_roles_in_game)

@@ -1,3 +1,4 @@
+import discord
 import random
 from player_info import get_player_info
 
@@ -5,7 +6,7 @@ MAX_NUM_PLAYERS = 10
 MIN_NUM_PLAYERS = 5
 num_players_to_mission = {
     1: [1, 1, 1, 1, 1],
-    2: [2, 2, 2, 2, 2],
+    2: [1, 1, 2, 1, 2],
     3: [2, 2, 2, 2, 2],
     4: [2, 2, 2, 2, 2],
     5: [2, 3, 2, 3, 3],
@@ -59,6 +60,7 @@ class THavalon:
         self.num_reverse = 0
         self.num_qb = 0
         self.name_to_play = {}
+        self.guin_examinee = None
 
     async def handle_public_message(self, message):
         # handle general messages that can be done anytime
@@ -71,6 +73,10 @@ class THavalon:
 
         if not self.game_running:
             if message.content == "!thavalon":
+                em = discord.Embed(title='My Embed Title', description='My Embed Content.', colour=0xDEADBF)
+                # em.set_author(name='Someone', icon_url=client.user.default_avatar_url)
+                await self.client.send_message(message.channel, embed=em)
+
                 self.game_running = True
                 await self.client.send_message(message.channel,
                                                "A new game has been started. Commands:\n"
@@ -86,9 +92,7 @@ class THavalon:
             if message.content == "!thavalon":
                 await self.client.send_message(message.channel, "Game in progress. Type !stop to stop game.")
             elif message.content == "!order" and self.game_state != "CREATE":
-                order_string = "Proposal Order:\n"
-                order_string += "\n".join(["\t\t{}".format(name) for name in self.order])
-                await self.client.send_message(message.channel, order_string)
+                await self.client.send_message(message.channel, "See pinned messages for order.")
             elif self.game_state == "CREATE":
                 await self.handle_create_message(message)
             elif self.game_state == "PROPOSE":
@@ -124,15 +128,26 @@ class THavalon:
             await self.client.send_message(message.channel, "{} has joined the game!".format(message.author.display_name))
         elif message.content == "!start":
             # check number of players
-            # if len(self.name_to_player) < MIN_NUM_PLAYERS:
-            #    await self.client.send_message(message.channel, "Need at least {} players to play".format(MIN_NUM_PLAYERS))
-            #    continue
+            if len(self.name_to_player) < 1: # MIN_NUM_PLAYERS:
+                await self.client.send_message(message.channel, "Need at least {} players to play".format(MIN_NUM_PLAYERS))
+                return
 
             # start game if possible
             self.game_state = "PROPOSE"
             self.mission_num = 0
+
+            # clear all previous pins
+            pins = await self.client.pins_from(self.public_channel)
+            for pin in pins:
+                await self.client.unpin_message(pin)
+
+            # update order
             self.order = list(self.name_to_player.keys())
             random.shuffle(self.order)
+            order_string = "Player Order:\n{}".format("".join(["\t\t{}) {}\n".format(idx + 1, name) for idx, name in enumerate(self.order)]))
+            order_msg = await self.client.send_message(self.public_channel, order_string)
+            await self.client.pin_message(order_msg)
+
             # TODO :remove
             if len(self.order) == 1:
                 self.order.append(self.order[0])
@@ -152,7 +167,8 @@ class THavalon:
             await self.client.send_message(player, player_info.string)
 
     async def print_game_start_info(self, message):
-        game_beginning_message = "The game has begun. Please check your messages for your role info.\n\n" \
+        game_beginning_message = "The game has begun. Please check your messages for your role info.\n" \
+                                "Check pinned messages for player order.\n" \
                                  "Type !order to see the proposal order.\n\n" \
                                  "{} and {} will be proposing teams for the first mission.\n" \
                                  "{}, please make your proposal." \
@@ -223,7 +239,6 @@ class THavalon:
                "Type !upvote to approve it.\n" \
                "Type !downvote to reject it.\n" \
                .format(self.order[self.proposer_idx], "".join("\t\t{}\n".format(name) for name in self.current_proposal))
-
 
     async def get_first_mission_vote_string(self):
         return "You are voting for which mission 1 proposal to send.\n\n" \
@@ -312,16 +327,42 @@ class THavalon:
         for name in self.going_proposal:
             await self.client.send_message(self.name_to_player[name],
                                            "You are going on a mission! Type !success, !reverse, or !fail to play a card.")
+        if 'Guinevere' in self.role_to_player and self.role_to_player['Guinevere'].name not in self.going_proposal:
+            await self.send_guinevere_ability_request()
+
+    async def send_guinevere_ability_request(self):
+        guin_name = self.role_to_player['Guinevere'].name
+        await self.client.send_message(self.name_to_player[guin_name],
+                                       "You have the ability to view one played card on the current mission of:\n{}.\n"
+                                       "To choose which player, type \"!examine <name>\" where <name> is the player's name.\n"
+                                       "You can choose to examine no one by typing \"!decline\".\n"
+                                       .format("".join("\t\t{}\n".format(name) for name in self.going_proposal)))
 
     async def handle_received_play(self, message):
         name = self.player_to_name[message.author]
         print("GOING PROPOSAL: {}".format(self.going_proposal))
         print("NAME: {}".format(name))
+        print("{} has sent {}".format(name, message.content))
         print()
+
+        # check guinevere
+        if 'Guinevere' in self.role_to_player and self.guin_examinee is None:
+            guin_name = self.role_to_player['Guinevere'].name
+            if guin_name == name and message.content == "!decline":
+                await self.client.send_message(message.author, "You have chosen to examine no one.")
+                self.guin_examinee = "none"
+            elif guin_name == name and message.content.startswith("!examine "):
+                examinee_name = message.content.replace("!examine ", "")
+                print("EXAMINEE: {}".format(examinee_name))
+                if examinee_name not in self.going_proposal:
+                    await self.client.send_message(message.author, "Invalid player to examine, try again.")
+                    return
+                await self.client.send_message(message.author, "You have chosen to examine {}".format(examinee_name))
+                self.guin_examinee = examinee_name
+            await self.check_mission_end()
+
         if name not in self.going_proposal:
             return
-        print("{} has sent {}".format(name, message.content))
-
         if name in self.name_to_play:
             await self.client.send_message(message.author, "You have already voted.")
             return
@@ -353,10 +394,23 @@ class THavalon:
 
         self.name_to_play[name] = message.content
 
+        await self.check_mission_end()
+
+    async def check_mission_end(self):
         if len(self.name_to_play) == len(self.going_proposal):
+            if 'Guinevere' in self.role_to_player and self.role_to_player['Guinevere'].name not in self.going_proposal and self.guin_examinee is None:
+                return
             print("NAME TO PLAY: {}".format(self.name_to_play))
             print("S: {}, F: {}, R: {}, QB: {}".format(self.num_success, self.num_fail, self.num_reverse, self.num_qb))
+            if self.guin_examinee and self.guin_examinee != "none":
+                await self.inform_guinevere()
             await self.show_played_mission()
+
+    async def inform_guinevere(self):
+        guin_player = self.name_to_player[self.role_to_player['Guinevere'].name]
+        await self.client.send_message(guin_player,
+                                       "{} played {}".format(self.guin_examinee,
+                                                             self.name_to_play[self.guin_examinee].replace("!", "")))
 
     async def show_played_mission(self):
         result_str = "The following team went on a mission:\n{}\nThe cards played were:\n".format("".join("\t\t{}\n".format(name) for name in self.going_proposal))
@@ -435,6 +489,7 @@ class THavalon:
         self.proposer_idx = (self.proposer_idx + 1) % len(self.order)
         self.current_proposal = []
         self.num_proposals = 1
+        self.guin_examinee = None
 
         # send message starting next round
         if self.mission_num == 5:

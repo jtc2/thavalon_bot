@@ -12,8 +12,8 @@ async def on_message(message):
     if not message.content.startswith("!"):
         return
 
-    if message.content == "!newgame" and "@admin" in [role.name for role in message.author.roles]:
-        client.send_message(message.channel, "Starting new game!")
+    if message.content == "!newgame" and "admin" in [role.name for role in message.author.roles]:
+        await client.send_message(message.channel, "Starting new game!")
         global game
         game = THavalon(client)
         return
