@@ -59,6 +59,9 @@ class THavalon:
         self.num_reverse = 0
         self.num_qb = 0
         self.name_to_play = {}
+        self.bewitch_target = ""
+        self.bewitch_vote = False
+        self.can_bewitch = True
 
     async def handle_public_message(self, message):
         # handle general messages that can be done anytime
@@ -95,7 +98,7 @@ class THavalon:
                 await self.handle_propose_message(message)
 
     async def handle_private_message(self, message):
-        print("MESSAGE REVEIVED: {} from {} in state {}".format(message.content, message.author, self.game_state))
+        print("MESSAGE RECEIVED: {} from {} in state {}".format(message.content, message.author, self.game_state))
         if self.game_state == "VOTE":
             await self.handle_received_vote(message)
         elif self.game_state == "PLAY":
@@ -137,8 +140,16 @@ class THavalon:
             if len(self.order) == 1:
                 self.order.append(self.order[0])
 
+            order_string = "Proposal Order:\n"
+            order_string += "\n".join(["\t\t{}".format(name) for name in self.order])
+            order_pin = await self.client.send_message(self.public_channel,order_string) 
+            await self.client.pin_message(order_pin)
+
+
             await self.assign_player_info()
             await self.print_game_start_info(message)
+            
+            
         elif message.content == "!players":
             players_string = "Players in game:\n"
             players_string += "\n".join(["\t{}".format(name) for name in self.name_to_player])
@@ -161,7 +172,7 @@ class THavalon:
 
     # handle messages during PROPOSE state
     async def handle_propose_message(self, message):
-        print("GOT PEOPOSAL: {}".format(message.content))
+        print("GOT PROPOSAL: {}".format(message.content))
         if message.content.startswith("!propose") and \
            message.author.display_name == self.order[self.proposer_idx]:
             num_on_mission = num_players_to_mission[len(self.order)][self.mission_num]
@@ -234,6 +245,10 @@ class THavalon:
     async def send_vote_requests(self, message, request_string):
         for player in self.player_to_name:
             await self.client.send_message(player, request_string)
+            if self.name_to_info[self.player_to_name[player]].role == "Oberon" and self.mission_num > 0:
+                bewitch_msg = "\nYou may bewitch someone once per round by typing `!bewitch <name> <upvote/downvote>` prior to submitting your own vote. This will cause them to vote as you chose for the current proposal."
+                await self.client.send_message(player,bewitch_msg)
+
 
     async def handle_received_vote(self, message):
         if message.author not in self.player_to_name:
@@ -248,10 +263,41 @@ class THavalon:
         elif message.content == "!downvote":
             self.name_to_vote[self.player_to_name[message.author]] = False
             await self.client.send_message(message.author, "You downvoted.")
+        elif message.content.startswith("!bewitch") and self.name_to_info[self.player_to_name[message.author]].role == "Oberon":
+            if self.mission_num == 0: 
+                await self.client.send_message(message.author, "You may not bewitch someone on the first mission. Please submit your vote.")
+            elif not self.can_bewitch: 
+                await self.client.send_message(message.author, "You have already bewitched someone this round. Please submit your vote.")
+            else:
+                bewitch_parse = message.content.replace("!bewitch ", "").split(" ")
+                self.bewitch_target = bewitch_parse[0]
+                bewitch_vote_str = bewitch_parse[1]
+                if self.bewitch_target not in self.name_to_player:
+                    self.bewitch_target = ""
+                    bewitch_vote_str = ""
+                    await self.client.send_message(message.author, "The targeted player is not in the game. Please try again.")
+                elif bewitch_vote_str != "upvote" and bewitch_vote_str != "downvote":
+                    self.bewitch_target = ""
+                    bewitch_vote_str = ""
+                    await self.client.send_message(message.author, "The selected vote is not valid. The options are 'upvote' and 'downvote'. Please try again.")
+                else:
+                    if bewitch_vote_str == "upvote":
+                        self.bewitch_vote = True
+                    else: 
+                        self.bewitch_vote = False
+                    self.can_bewitch = False
+                    await self.client.send_message(message.author, "You have bewitched {} to {} this proposal.\nPlease submit your own vote now.".format(self.bewitch_target,("upvote" if self.bewitch_vote else "downvote")))
         else:
             await self.client.send_message(message.author, "Invalid vote, please vote again.")
 
         if len(self.name_to_vote) == len(self.order):
+            if self.bewitch_target:
+                old_vote = self.name_to_vote[self.bewitch_target]
+                if self.bewitch_vote != old_vote:
+                    self.name_to_vote[self.bewitch_target] = self.bewitch_vote
+                    await self.client.send_message(self.name_to_player[self.bewitch_target],"Oberon has changed your vote to {}.".format("**upvote**" if self.bewitch_vote else "**downvote**"))
+            self.bewitch_target = ""
+            self.bewitch_vote = False
             print("VOTES ARE IN: {}".format(self.name_to_vote))
             await self.determine_vote_result()
 
@@ -372,6 +418,7 @@ class THavalon:
             cards.append("QUESTING BEAST WAS HERE :heart:")
 
         result = True
+        self.saved_reverse = self.num_reverse
         self.num_reverse = self.num_reverse % 2
         if self.mission_num != 3 or len(self.order) < 7:
             if self.num_fail > 0 and self.num_reverse == 0:
@@ -409,6 +456,11 @@ class THavalon:
         result_str = "The result of this mission is {}.\n\n".format("PASS" if result else "FAIL")
         await self.client.send_message(self.public_channel, result_str)
 
+        mission_pin = "Mission {}: {}\n\t{}\n\tSuccess: {}, Fail: {}, Reverse: {}".format(str(int(self.mission_num)+1),"PASS" if result else "FAIL","".join("{} ".format(name) for name in self.going_proposal),self.num_success,self.num_fail,self.saved_reverse)
+        mission_pin_msg = await self.client.send_message(self.public_channel,mission_pin)
+
+        await self.client.pin_message(mission_pin_msg)
+        
         if result:
             self.num_passes += 1
         else:
@@ -435,6 +487,7 @@ class THavalon:
         self.proposer_idx = (self.proposer_idx + 1) % len(self.order)
         self.current_proposal = []
         self.num_proposals = 1
+        self.can_bewitch = True 
 
         # send message starting next round
         if self.mission_num == 5:
