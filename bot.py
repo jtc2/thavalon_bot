@@ -2,7 +2,7 @@
 import discord
 from thavalon import THavalon
 
-TOKEN = 'NTAwNDY5MjczMDg5NjcxMTY4.DqLfOw.7PQdddUEZrs0A6E2bja_qQziB-0'
+TOKEN = ''
 
 client = discord.Client()
 game = THavalon(client)
