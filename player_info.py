@@ -59,6 +59,7 @@ class Player():
 		self.team = None
 		self.modifier = None
 		self.info = []
+		self.is_assassin = False
 
 	def set_role(self, role):
 		self.role = role
@@ -97,10 +98,10 @@ def get_player_info(player_names):
 	good_roles = ['Merlin','Percival','Lancelot','Tristan','Iseult']
 	evil_roles = ['Mordred','Morgana','Maelegant']
 
-	if num_players == 2:
-		good_roles = ['Guinevere']
+	if num_players == 3:
+		good_roles = ['Iseult', 'Tristan']
 		evil_roles = ['Maelegant']
-		num_good = 1
+		num_good = 2
 		num_evil = 1
 
 	# roles added in larger games
@@ -148,6 +149,10 @@ def get_player_info(player_names):
 		gp.set_team('Good')
 		player_of_role[new_role] = gp
 
+	# if there is at least one evil, first evil player becomes assassin
+	if len(evil_players) > 0:
+		evil_players[0].is_assassin = True
+
 	for ep in evil_players:
 		new_role = evil_roles_in_game.pop()
 		ep.set_role(new_role)
@@ -162,6 +167,8 @@ def get_player_info(player_names):
 	for ep in evil_players:
 		if ep.role is not 'Colgrevance' and player_of_role.get('Colgrevance'):
 			ep.add_info(['Colgrevance lurks in the shadows'])
+		if ep.is_assassin:
+			ep.add_info(['You are the Assassin.'])
 
 	bar = '----------------------------------------\n'
 	for player in players:

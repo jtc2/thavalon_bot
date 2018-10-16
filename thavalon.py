@@ -161,12 +161,6 @@ class THavalon:
             if len(self.order) == 1:
                 self.order.append(self.order[0])
 
-            order_string = "Proposal Order:\n"
-            order_string += "\n".join(["\t\t{}".format(name) for name in self.order])
-            order_pin = await self.client.send_message(self.public_channel,order_string) 
-            await self.client.pin_message(order_pin)
-
-
             await self.assign_player_info()
             await self.print_game_start_info(message)
             
@@ -504,7 +498,7 @@ class THavalon:
                 return False
             return True
 
-        if "Agravaine" in self.role_to_player and result and self.num_fail > 0:
+        if ("Agravaine" in self.role_to_player or len(self.order) >= 8) and result and self.num_fail > 0:
             await self.client.send_message(self.public_channel, "If you are Agravaine and would like to declare, type !declare in chat. You have 10 seconds.")
             message = await self.client.wait_for_message(timeout=10, channel=self.public_channel, check=agravaine_check)
             if message is None:
@@ -527,12 +521,18 @@ class THavalon:
             self.num_failures += 1
 
         if self.num_passes == 3:
-            await self.client.send_message(self.public_channel, "The game has ended! The \"Good\" team has won!")
-            self.game_running = False
-            return
+            assassin_res = await self.check_assassination()
+            if assassin_res:
+                self.num_failures = 3
+            else:
+                await self.client.send_message(self.public_channel, "The game has ended! The \"Good\" team has won!")
+                self.game_running = False
+                await self.print_game_over_info()
+                return
         if self.num_failures == 3:
             await self.client.send_message(self.public_channel, "The game has ended! The \"Evil\" team has won!")
             self.game_running = False
+            await self.print_game_over_info()
             return
 
 
@@ -562,3 +562,101 @@ class THavalon:
                                          num_players_to_mission[len(self.order)][self.mission_num],
                                          self.order[self.proposer_idx],
                                          num_players_to_num_proposals[len(self.order)]))
+
+    async def check_assassination(self):
+        print("CHECKING ASSASSINATION")
+        assassin = None
+        for player in self.role_to_player:
+            if self.role_to_player[player].is_assassin:
+                assassin = self.role_to_player[player].name
+                break
+        print("ASSASSIN: {}".format(assassin))
+        await self.client.send_message(self.public_channel,
+                                       embed=discord.Embed(description="Evil now has a chance to assassinate someone.\n"
+                                                                       "To assassinate someone, type !assassinate <role> <players>.\n"
+                                                                       "<@{}> is the assassin!".format(self.name_to_player[assassin].id),
+                                                           color=discord.Color.dark_blue()))
+
+        async def send_invalid_assassin_msg():
+            await self.client.send_message(self.public_channel,
+                                           embed=discord.Embed(description="Invalid format. Ensure you have valid target role and target player(s).",
+                                                               color=discord.Color.dark_blue()))
+
+        async def send_incorrect_assassin_msg():
+            await self.client.send_message(self.public_channel,
+                                           embed=discord.Embed(description="Assassination was incorrect.",
+                                                               color=discord.Color.dark_blue()))
+
+        async def send_correct_assassin_msg():
+            await self.client.send_message(self.public_channel,
+                                           embed=discord.Embed(description="Assassination was correct!",
+                                                               color=discord.Color.dark_blue()))
+
+        def check_assassin_msg(msg):
+            if msg.content.startswith("!assassinate ") and msg.author.display_name == assassin:
+                return True
+
+        assassin_res = None
+        while assassin_res is None:
+            msg = await self.client.wait_for_message(check=check_assassin_msg)
+            print("MSG RECEIVED: {}".format(msg.content))
+            content = msg.content.replace("!assassinate ", "")
+            split_content = content.split(" ")
+            target_role = split_content[0]
+            target_names = split_content[1:]
+            if target_role == 'None':
+                if len(target_names) > 0:
+                    await send_invalid_assassin_msg()
+                    continue
+                if 'Merlin' in self.role_to_player or 'Iseult' in self.role_to_player or 'Tristan' in self.role_to_player or 'Guinevere' in self.role_to_player:
+                    await send_incorrect_assassin_msg()
+                    assassin_res = False
+                else:
+                    await send_correct_assassin_msg()
+                    assassin_res = True
+            elif target_role == 'Guinevere' or target_role == 'Merlin':
+                if len(target_names) != 1:
+                    await send_invalid_assassin_msg()
+                    continue
+                if target_role in self.role_to_player and self.role_to_player[target_role].name == target_names[0]:
+                    await send_correct_assassin_msg()
+                    assassin_res = True
+                else:
+                    await send_incorrect_assassin_msg()
+                    assassin_res = False
+            elif target_role == 'Lovers':
+                if len(target_names) != 2:
+                    await send_invalid_assassin_msg()
+                    continue
+                if 'Iseult' in self.role_to_player and 'Tristan' in self.role_to_player and \
+                        self.role_to_player['Iseult'].name in target_names and self.role_to_player['Tristan'].name in target_names:
+                    await send_correct_assassin_msg()
+                    assassin_res = True
+                else:
+                    await send_incorrect_assassin_msg()
+                    assassin_res = False
+            else:
+                await send_invalid_assassin_msg()
+
+        return assassin_res
+
+    async def print_game_over_info(self):
+        good = []
+        evil = []
+        for role in self.role_to_player:
+            if self.role_to_player[role].team == "Good":
+                good.append(self.role_to_player[role])
+            if self.role_to_player[role].team == "Evil":
+                evil.append(self.role_to_player[role])
+
+        desc = "Good:\n"
+        for good_role in good:
+            desc += "\t\t{} = {}\n".format(good_role.name, good_role.role)
+
+        desc += "\nEvil:\n"
+        for evil_role in evil:
+            desc += "\t\t{} = {}\n".format(evil_role.name, evil_role.role)
+
+        await self.client.send_message(self.public_channel,
+                                       embed=discord.Embed(description=desc,
+                                                           color=discord.Color.dark_blue()))
