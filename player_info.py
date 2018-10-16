@@ -7,19 +7,19 @@ import sys
 # get_role_descriptions - this is called when information files are generated.
 def get_role_description(role):
 	return {
-		'Tristan'		: 'The person you see is also Good and is aware that you are Good.',
-		'Iseult'		: 'The person you see is also Good and is aware that you are Good.',
-		'Merlin' 		: 'You know which people have Evil roles, but not who has any specific role.',
+		'Tristan'		: 'The person you see is also Good and is aware that you are Good.\n You and Iseult are collectively a valid Assassination target.',
+		'Iseult'		: 'The person you see is also Good and is aware that you are Good.\n You and Tristan are collectively a valid Assassination target.',
+		'Merlin' 		: 'You know which people have Evil roles, but not who has any specific role.\n You are a valid Assassination target.',
 		'Percival'		: 'You know which people have the Merlin or Morgana roles, but not specifically who has each.',
 		'Lancelot'		: 'You may play Reversal cards while on missions.',
-		'Guinevere'		: 'Whenever you are not on a mission, you may select one player on the mission and see what card they played.',
-		# 'Guinevere'		: 'You see three connections between pairs of people. Two of those connections are true, and represent actual connections between Information roles. The other connection is false.',
+		'Guinevere'		: 'During each mission for which you are not on the team, you may select one player on the mission team and see the card they played.\n You are a valid Assassination target.',
 		'Arthur'		: 'After you are on a mission that Fails, you may declare as Arthur, establishing that you are Good for the remainder of the game.\n Once you do this, you are no longer able to go on missions, but your voting power is doubled.',
 		'Mordred' 		: 'You are hidden from all Good Information roles. \nLike other Evil characters, you know who else is Evil (except Colgrevance).',
 		'Morgana'		: 'You appear like Merlin to Percival. \nLike other Evil characters, you know who else is Evil (except Colgrevance).',
 		'Maelegant'		: 'You may play Reversal cards while on missions. \nLike other Evil characters, you know who else is Evil (except Colgrevance).',
 		'Agravaine'		: 'You must play Fail cards while on missions. \nIf you are on a mission that Succeeds, you may declare as the Enforcer to cause it to Fail instead. \nLike other Evil characters, you know who else is Evil (except Colgrevance).',
-		'Colgrevance' 	: 'You know not only who else is Evil, but what role each other Evil player possess. \nEvil players know that there is a Colgrevance, but do not know that it is you.',
+		'Colgrevance' 		: 'You know not only who else is Evil, but what role each other Evil player possess. \nEvil players know that there is a Colgrevance, but do not know that it is you.',
+		'Oberon' 		: "Once per round (except the first), during a vote on a proposal, you can secretly change one other player's vote to a vote of your choice. \nLike other Evil characters, you know who else is Evil (except Colgrevance).",
 	}.get(role,'ERROR: No description available.')
 
 # get_role_information: this is called to populate information files
@@ -42,23 +42,8 @@ def get_role_information(my_player,players):
 		'Maelegant' 	: ['{} is Evil.'.format(player.name) for player in players if player.team is 'Evil' and player is not my_player and player.role is not 'Colgrevance'],
 		'Agravaine'		: ['{} is Evil.'.format(player.name) for player in players if player.team is 'Evil' and player is not my_player and player.role is not 'Colgrevance'],
 		'Colgrevance' 	: ['{} is {}'.format(player.name,player.role) for player in players if player.team is 'Evil' and player is not my_player],
+		'Oberon'		: ['{} is Evil.'.format(player.name) for player in players if player.team is 'Evil' and player is not my_player and player.role is not 'Colgrevance'],
 	}.get(my_player.role,[])
-
-def get_role_type(role):
-	return {
-		'Tristan'		: 'Information',
-		'Iseult'		: 'Information',
-		'Merlin'		: 'Information',
-		'Percival'		: 'Information',
-		'Lancelot'		: 'Ability',
-		'Arthur'		: 'Ability',
-		'Guinevere'		: 'Ability',
-		'Mordred'		: 'Information',
-		'Morgana'		: 'Information',
-		'Maelegant'		: 'Ability',
-		'Agravaine'		: 'Ability',
-		'Colgrevance'	: 'Information',
-	}.get(role,'Undefined')
 
 class Player():
 	# players have the following traits
@@ -70,7 +55,6 @@ class Player():
 	# modifier: the random modifier this player has [NOT CURRENTLY UTILIZED]
 	def __init__(self,name):
 		self.name = name
-		self.type = None
 		self.role = None
 		self.team = None
 		self.modifier = None
@@ -78,7 +62,6 @@ class Player():
 
 	def set_role(self, role):
 		self.role = role
-		self.type = get_role_type(role)
 
 	def set_team(self, team):
 		self.team = team
@@ -121,15 +104,16 @@ def get_player_info(player_names):
 		num_evil = 1
 
 	# roles added in larger games
-	# arthur and guinevere on hold until mechanics devised
+	# arthur on hold
 	if num_players > 6:
-		# good_roles.append('Guinevere')
 		# good_roles.append('Arthur')
 		pass
 
 	if num_players > 7:
+		good_roles.append('Guinevere')
 		evil_roles.append('Agravaine')
 		good_roles.append('Guinevere')
+		evil_roles.append('Oberon')
 
 	if num_players == 10:
 		evil_roles.append('Colgrevance')
@@ -138,9 +122,8 @@ def get_player_info(player_names):
 	evil_roles_in_game = random.sample(evil_roles,num_evil)
 
 	# remove lone lovers
-	# this is temporarily suspended so that games of up to 8 can be played without runtime errors (due to lack of good roles implemented)
 	if sum(gr in ['Tristan','Iseult'] for gr in good_roles_in_game) == 1:
-		available_roles = set(good_roles)-set(good_roles_in_game)-set(['Tristan','Iseult']) 
+		available_roles = set(good_roles)-set(good_roles_in_game)-set(['Tristan','Iseult'])
 		if 'Tristan' in good_roles_in_game:
 			good_roles_in_game.remove('Tristan') 
 		if 'Iseult' in good_roles_in_game:
@@ -182,7 +165,7 @@ def get_player_info(player_names):
 
 	bar = '----------------------------------------\n'
 	for player in players:
-		player.string = bar+'You are '+player.role+' ['+player.team+' '+player.type+']\n'+bar+get_role_description(player.role)+'\n'+bar+'\n'.join(player.info)+'\n'+bar
+		player.string = bar+'You are '+player.role+' ['+player.team+']\n'+bar+get_role_description(player.role)+'\n'+bar+'\n'.join(player.info)+'\n'+bar
 
 	return player_of_role
 
