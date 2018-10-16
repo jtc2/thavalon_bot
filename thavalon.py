@@ -64,15 +64,39 @@ class THavalon:
         self.bewitch_target = ""
         self.bewitch_vote = False
         self.can_bewitch = True
+        self.arthur_declared = False 
+        self.num_approve = 0
+        self.num_reject = 0
 
     async def handle_public_message(self, message):
         # handle general messages that can be done anytime
-        if message.content == '!agravainemedaddy':
-            await self.client.send_message(message.author, "No {0.author.mention}".format(message))
-            return
-        elif message.content == "!cookiejar":
-            await self.client.send_message(message.channel, "The cookie jar is over there Meg.")
-            return
+        if self.game_running and self.game_state != "CREATE":
+            if message.content == "!declare":
+                if self.game_state != "PLAY" and self.name_to_info[message.author.display_name].role == "Arthur" and self.num_passes < 2 and self.num_failures == 2 and self.mission_num != 0:
+                    # arthur and agravaine will never declare at the same time 
+                    # if arthur declares during propose phase, its fine 
+                    self.arthur_declared = True
+                    await self.client.send_message(message.channel, "{} has declared as Arthur.\nTheir vote on team proposals is counted twice (and they are immune to any effect that can change their vote), but they may not be on mission teams until the 5th mission.".format(message.author.display_name))              
+                    if self.game_state == "VOTE":
+                        # if the declaration happens during a voting phase
+                        ## end current voting phase 
+                        ## notify everyone on mission that voting phase is reset 
+                        ## notify mission leader to repropose 
+                        self.game_state = "PROPOSE"
+                        #self.proposer_idx = (self.proposer_idx + 0) % len(self.order)
+                        self.current_proposal = []
+                        #self.num_proposals += 0
+                        self.name_to_vote = {}
+                        await self.client.send_message(message.channel,"\nDue to the Arthur declaration, the current mission leader may make another proposal.")
+
+                        await self.client.send_message(self.public_channel, "{}, please propose a {} player mission. This is proposal {} of {}." \
+                                      .format(self.order[self.proposer_idx],
+                                              num_players_to_mission[len(self.order)][self.mission_num],
+                                              self.num_proposals,
+                                              num_players_to_num_proposals[len(self.order)]))
+                else: 
+                    await self.client.send_message(message.channel, "This declaration is not valid.\n\tAgravaine may only make declarations after a mission on which they played a Fail card Succeeded.\n\tArthur can only declare during the team proposal phase after two missions have Failed and at most one mission has Succeded.")
+                    # need to add a "invalid declaration response"
 
         if not self.game_running:
             if message.content == "!thavalon":
@@ -197,10 +221,18 @@ class THavalon:
             if len(proposed_names) != num_on_mission:
                 await self.client.send_message(message.channel, "Proposal must have exactly {} players. Propose again.".format(num_on_mission))
                 return
+            if len(list(set(proposed_names))) != len(proposed_names):
+                await self.client.send_message(message.channel, "Duplicate players - each player may only occupy a single spot on the mission. Propose again.")
+                return
             for name in proposed_names:
                 if name not in self.name_to_player:
                     await self.client.send_message(message.channel, "Invalid players - all players must be in game. Propose again.")
                     return
+                # handling arthur on teams 
+                # a declared arthur may not go on missions until the 5th round
+                if self.name_to_info[name].role == "Arthur" and self.arthur_declared and self.mission_num != 4:
+                    await self.client.send_message(message.channel,"Arthur ({}) is not permitted to go on this mission. Please propose again.".format(self.role_to_player['Arthur'].name))
+                    return 
             if self.proposer_idx == -2:
                 # if first proposal
                 self.first_proposal = proposed_names
@@ -291,6 +323,10 @@ class THavalon:
                     self.bewitch_target = ""
                     bewitch_vote_str = ""
                     await self.client.send_message(message.author, "The targeted player is not in the game. Please try again.")
+                elif self.name_to_info[self.bewitch_target].role == "Arthur" and self.arthur_declared:
+                    self.bewitch_target = ""
+                    bewitch_vote_str = ""
+                    await self.client.send_message(message.author, "You cannot change Arthur's vote after they have declared. Please try again.")
                 elif bewitch_vote_str != "upvote" and bewitch_vote_str != "downvote":
                     self.bewitch_target = ""
                     bewitch_vote_str = ""
@@ -319,11 +355,23 @@ class THavalon:
     async def determine_vote_result(self):
         accepters = []
         rejecters = []
+        self.num_approve = 0 
+        self.num_reject = 0
         for name, vote in self.name_to_vote.items():
-            if vote:
-                accepters.append(name)
+            if self.name_to_info[name].role == "Arthur" and self.arthur_declared:
+                if vote:
+                    accepters.append("{} (x2)".format(name))
+                    self.num_approve += 2
+                else:
+                    rejecters.append("{} (x2)".format(name))
+                    self.num_reject += 2
             else:
-                rejecters.append(name)
+                if vote:
+                    accepters.append(name)
+                    self.num_approve += 1
+                else:
+                    rejecters.append(name)
+                    self.num_reject += 1
         vote_result_string = "The votes are in!\n" \
                              "Upvote:\n{}" \
                              "Downvote:\n{}" \
@@ -335,7 +383,7 @@ class THavalon:
         mission_going_string = "\n\n{} are going on the mission! Check your messages to vote"
         if self.mission_num == 0:
             # handle first mission
-            if len(accepters) > len(rejecters):
+            if self.num_approve > self.num_reject:
                 self.going_proposal = self.first_proposal
                 vote_result_string += mission_going_string.format(", ".join(self.first_proposal))
             else:
@@ -347,7 +395,7 @@ class THavalon:
             await self.send_play_requests()
         else:
             # all other missions
-            if len(accepters) > len(rejecters):
+            if self.num_approve > self.num_reject:
                 self.going_proposal = self.current_proposal
                 vote_result_string += "The mission is approved!\n"
                 vote_result_string += mission_going_string.format(", ".join(self.going_proposal))
@@ -495,6 +543,8 @@ class THavalon:
             if message.content != "!declare":
                 return False
             if self.name_to_info[message.author.display_name].role != "Agravaine":
+                return False
+            if self.name_to_info[message.author.display_name].name not in self.going_proposal: 
                 return False
             return True
 
