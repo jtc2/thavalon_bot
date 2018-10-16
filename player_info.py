@@ -13,12 +13,12 @@ def get_role_description(role):
 		'Percival'		: 'You know which people have the Merlin or Morgana roles, but not specifically who has each.',
 		'Lancelot'		: 'You may play Reversal cards while on missions.',
 		'Guinevere'		: 'During each mission for which you are not on the team, you may select one player on the mission team and see the card they played.\n You are a valid Assassination target.',
-		'Arthur'		: 'After you are on a mission that Fails, you may declare as Arthur, establishing that you are Good for the remainder of the game.\n Once you do this, you are no longer able to go on missions, but your voting power is doubled.',
+		'Arthur'		: 'You know which Good roles are in the game, but not who has any given role.\nIf two missions have Failed, and less than two missions have Succeeded, you may declare as Arthur.\nAfter declaring, your vote on team proposals is counted twice, but you are unable to be on mission teams until the 5th mission.\nAfter declaring, you are immune to any effect that can forcibly change your vote.',
 		'Mordred' 		: 'You are hidden from all Good Information roles. \nLike other Evil characters, you know who else is Evil (except Colgrevance).',
 		'Morgana'		: 'You appear like Merlin to Percival. \nLike other Evil characters, you know who else is Evil (except Colgrevance).',
 		'Maelegant'		: 'You may play Reversal cards while on missions. \nLike other Evil characters, you know who else is Evil (except Colgrevance).',
 		'Agravaine'		: 'You must play Fail cards while on missions. \nIf you are on a mission that Succeeds, you may declare as the Enforcer to cause it to Fail instead. \nLike other Evil characters, you know who else is Evil (except Colgrevance).',
-		'Colgrevance' 		: 'You know not only who else is Evil, but what role each other Evil player possess. \nEvil players know that there is a Colgrevance, but do not know that it is you.',
+		'Colgrevance' 	: 'You know not only who else is Evil, but what role each other Evil player possess. \nEvil players know that there is a Colgrevance, but do not know that it is you.',
 		'Oberon' 		: "Once per round (except the first), during a vote on a proposal, you can secretly change one other player's vote to a vote of your choice. \nLike other Evil characters, you know who else is Evil (except Colgrevance).",
 	}.get(role,'ERROR: No description available.')
 
@@ -35,7 +35,7 @@ def get_role_information(my_player,players):
 		'Merlin' 		: ['{} is Evil.'.format(player.name) for player in players if ((player.team is 'Evil' and player.role is not 'Mordred') or player.role is 'Lancelot')],
 		'Percival'		: ['{} is Merlin or Morgana.'.format(player.name) for player in players if player.role is 'Merlin' or player.role is 'Morgana'],
         'Lancelot'		: [],
-		'Arthur'		: [],
+		'Arthur'		: ['{}'.format(player.role) for player in players if player.team is 'Good' and player.role is not 'Arthur'],
 		'Guinevere'		: [],
 		'Mordred'	 	: ['{} is Evil.'.format(player.name) for player in players if player.team is 'Evil' and player is not my_player and player.role is not 'Colgrevance'],
 		'Morgana' 		: ['{} is Evil.'.format(player.name) for player in players if player.team is 'Evil' and player is not my_player and player.role is not 'Colgrevance'],
@@ -98,17 +98,15 @@ def get_player_info(player_names):
 	good_roles = ['Merlin','Percival','Lancelot','Tristan','Iseult']
 	evil_roles = ['Mordred','Morgana','Maelegant']
 
-	if num_players == 3:
-		good_roles = ['Iseult', 'Tristan']
-		evil_roles = ['Maelegant']
-		num_good = 2
+	if num_players == 2:
+		good_roles = ['Arthur']
+		evil_roles = ['Oberon']
+		num_good = 1
 		num_evil = 1
 
 	# roles added in larger games
-	# arthur on hold
 	if num_players > 6:
-		# good_roles.append('Arthur')
-		pass
+		good_roles.append('Arthur')
 
 	if num_players > 7:
 		good_roles.append('Guinevere')
