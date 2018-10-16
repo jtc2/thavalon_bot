@@ -94,6 +94,8 @@ class THavalon:
                                               num_players_to_mission[len(self.order)][self.mission_num],
                                               self.num_proposals,
                                               num_players_to_num_proposals[len(self.order)]))
+                elif self.name_to_info[message.author.display_name].role == "Agravaine" and self.num_fail > 0:
+                    pass
                 else: 
                     await self.client.send_message(message.channel, "This declaration is not valid.\n\tAgravaine may only make declarations after a mission on which they played a Fail card Succeeded.\n\tArthur can only declare during the team proposal phase after two missions have Failed and at most one mission has Succeded.")
                     # need to add a "invalid declaration response"
