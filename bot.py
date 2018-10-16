@@ -1,7 +1,7 @@
 # Work with Python 3.6
 import discord
 from thavalon import THavalon
-from token import TOKEN
+from tokens import TOKEN
 
 client = discord.Client()
 game = THavalon(client)
