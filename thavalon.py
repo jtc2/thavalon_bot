@@ -73,17 +73,13 @@ class THavalon:
 
         if not self.game_running:
             if message.content == "!thavalon":
-                em = discord.Embed(title='My Embed Title', description='My Embed Content.', colour=0xDEADBF)
-                # em.set_author(name='Someone', icon_url=client.user.default_avatar_url)
+                em = discord.Embed(description="A new game has been started!", colour=discord.Color.dark_blue())
+                em.add_field(name="!join", value="Join the game", inline=False)
+                em.add_field(name="!players", value="List the players who have joined so far", inline=False)
+                em.add_field(name="!start", value="Start the game", inline=False)
                 await self.client.send_message(message.channel, embed=em)
 
                 self.game_running = True
-                await self.client.send_message(message.channel,
-                                               "A new game has been started. Commands:\n"
-                                               "\t\t!join to join the game\n"
-                                               "\t\t!players to view current players\n"
-                                               "\t\t!start to begin game\n"
-                                               "\t\t!stop to stop game\n")
             else:
                 await self.client.send_message(message.channel, "No game running, type !thavalon to start a game")
             return
@@ -118,18 +114,26 @@ class THavalon:
             # check is new player
             if message.author.display_name in self.name_to_player:
                 await self.client.send_message(message.channel,
-                                        "{} is already in the game!".format(message.author.display_name))
+                                               embed=discord.Embed(description="{} is already in the game"
+                                                                               .format(message.author.display_name),
+                                                                   colour=discord.Color.dark_blue()))
                 return
 
             # add new player
             # name_to_player[reply.author.display_name + str(len(name_to_player))] = reply.author
             self.name_to_player[message.author.display_name] = message.author
             self.player_to_name[message.author] = message.author.display_name
-            await self.client.send_message(message.channel, "{} has joined the game!".format(message.author.display_name))
+            await self.client.send_message(message.channel,
+                                           embed=discord.Embed(description="{} has joined the game!"
+                                                                           .format(message.author.display_name),
+                                                               colour=discord.Color.dark_blue()))
         elif message.content == "!start":
             # check number of players
             if len(self.name_to_player) < 1: # MIN_NUM_PLAYERS:
-                await self.client.send_message(message.channel, "Need at least {} players to play".format(MIN_NUM_PLAYERS))
+                await self.client.send_message(message.channel,
+                                               discord.Embed(description="Need at least {} players to play"
+                                                                         .format(MIN_NUM_PLAYERS),
+                                                             colour=discord.Color.dark_blue()))
                 return
 
             # start game if possible
@@ -145,7 +149,9 @@ class THavalon:
             self.order = list(self.name_to_player.keys())
             random.shuffle(self.order)
             order_string = "Player Order:\n{}".format("".join(["\t\t{}) {}\n".format(idx + 1, name) for idx, name in enumerate(self.order)]))
-            order_msg = await self.client.send_message(self.public_channel, order_string)
+            order_msg = await self.client.send_message(self.public_channel,
+                                                       embed=discord.Embed(description=order_string,
+                                                                           colour=discord.Color.dark_blue()))
             await self.client.pin_message(order_msg)
 
             # TODO :remove
