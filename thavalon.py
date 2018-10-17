@@ -294,7 +294,7 @@ class THavalon:
     async def send_vote_requests(self, message, request_string):
         for player in self.player_to_name:
             await self.client.send_message(player, request_string)
-            if self.name_to_info[self.player_to_name[player]].role == "Oberon" and self.mission_num > 0:
+            if self.name_to_info[self.player_to_name[player]].role == "Oberon" and self.mission_num > 0 and self.num_failures < 2:
                 bewitch_msg = "\nYou may bewitch someone once per round by typing `!bewitch <name> <upvote/downvote>` prior to submitting your own vote. This will cause them to vote as you chose for the current proposal."
                 await self.client.send_message(player,bewitch_msg)
 
@@ -315,6 +315,8 @@ class THavalon:
         elif message.content.startswith("!bewitch") and self.name_to_info[self.player_to_name[message.author]].role == "Oberon":
             if self.mission_num == 0: 
                 await self.client.send_message(message.author, "You may not bewitch someone on the first mission. Please submit your vote.")
+            elif self.num_failures == 2: 
+                await self.client.send_message(message.author, "You may not bewitch someone after two missions have failed. Please submit your vote.")
             elif not self.can_bewitch: 
                 await self.client.send_message(message.author, "You have already bewitched someone this round. Please submit your vote.")
             else:
