@@ -14,10 +14,11 @@ def get_role_description(role):
 		'Lancelot'		: 'You may play Reversal cards while on missions.',
 		'Guinevere'		: 'During each mission for which you are not on the team, you may select one player on the mission team and see the card they played.\n You are a valid Assassination target.',
 		'Arthur'		: 'You know which Good roles are in the game, but not who has any given role.\nIf two missions have Failed, and less than two missions have Succeeded, you may declare as Arthur.\nAfter declaring, your vote on team proposals is counted twice, but you are unable to be on mission teams until the 5th mission.\nAfter declaring, you are immune to any effect that can forcibly change your vote.',
+		'Titania'		: 'You appear as Evil to all players with Evil roles (except Colgrevance).',
 		'Mordred' 		: 'You are hidden from all Good Information roles. \nLike other Evil characters, you know who else is Evil (except Colgrevance).',
 		'Morgana'		: 'You appear like Merlin to Percival. \nLike other Evil characters, you know who else is Evil (except Colgrevance).',
 		'Maelegant'		: 'You may play Reversal cards while on missions. \nLike other Evil characters, you know who else is Evil (except Colgrevance).',
-		'Agravaine'		: 'You must play Fail cards while on missions. \nIf you are on a mission that Succeeds, you may declare as the Enforcer to cause it to Fail instead. \nLike other Evil characters, you know who else is Evil (except Colgrevance).',
+		'Agravaine'		: 'You must play Fail cards while on missions. \nIf you are on a mission that Succeeds, you may declare as Agravaine to cause it to Fail instead. \nLike other Evil characters, you know who else is Evil (except Colgrevance).',
 		'Colgrevance' 	: 'You know not only who else is Evil, but what role each other Evil player possess. \nEvil players know that there is a Colgrevance, but do not know that it is you.',
 		'Oberon' 		: "Once per round (except the first), during a vote on a proposal, you can secretly change one other player's vote to a vote of your choice. \nLike other Evil characters, you know who else is Evil (except Colgrevance).",
 	}.get(role,'ERROR: No description available.')
@@ -37,12 +38,13 @@ def get_role_information(my_player,players):
         'Lancelot'		: [],
 		'Arthur'		: ['{}'.format(player.role) for player in players if player.team is 'Good' and player.role is not 'Arthur'],
 		'Guinevere'		: [],
-		'Mordred'	 	: ['{} is Evil.'.format(player.name) for player in players if player.team is 'Evil' and player is not my_player and player.role is not 'Colgrevance'],
-		'Morgana' 		: ['{} is Evil.'.format(player.name) for player in players if player.team is 'Evil' and player is not my_player and player.role is not 'Colgrevance'],
-		'Maelegant' 	: ['{} is Evil.'.format(player.name) for player in players if player.team is 'Evil' and player is not my_player and player.role is not 'Colgrevance'],
-		'Agravaine'		: ['{} is Evil.'.format(player.name) for player in players if player.team is 'Evil' and player is not my_player and player.role is not 'Colgrevance'],
+		'Titania'		: [],
+		'Mordred'	 	: ['{} is Evil.'.format(player.name) for player in players if (player.team is 'Evil' and player is not my_player and player.role is not 'Colgrevance') or player.role is 'Titania'],
+		'Morgana' 		: ['{} is Evil.'.format(player.name) for player in players if player.team is 'Evil' and player is not my_player and player.role is not 'Colgrevance' or player.role is 'Titania'],
+		'Maelegant' 	: ['{} is Evil.'.format(player.name) for player in players if player.team is 'Evil' and player is not my_player and player.role is not 'Colgrevance' or player.role is 'Titania'],
+		'Agravaine'		: ['{} is Evil.'.format(player.name) for player in players if player.team is 'Evil' and player is not my_player and player.role is not 'Colgrevance' or player.role is 'Titania'],
 		'Colgrevance' 	: ['{} is {}'.format(player.name,player.role) for player in players if player.team is 'Evil' and player is not my_player],
-		'Oberon'		: ['{} is Evil.'.format(player.name) for player in players if player.team is 'Evil' and player is not my_player and player.role is not 'Colgrevance'],
+		'Oberon'		: ['{} is Evil.'.format(player.name) for player in players if player.team is 'Evil' and player is not my_player and player.role is not 'Colgrevance' or player.role is 'Titania'],
 	}.get(my_player.role,[])
 
 class Player():
@@ -95,12 +97,12 @@ def get_player_info(player_names):
 	num_good = num_players - num_evil
 
 	# establish available roles
-	good_roles = ['Merlin','Percival','Lancelot','Tristan','Iseult']
+	good_roles = ['Merlin','Percival','Lancelot','Tristan','Iseult','Titania']
 	evil_roles = ['Mordred','Morgana','Maelegant']
 
 	if num_players == 2:
-		good_roles = ['Arthur']
-		evil_roles = ['Oberon']
+		good_roles = ['Titania']
+		evil_roles = ['Agravaine']
 		num_good = 1
 		num_evil = 1
 
@@ -111,7 +113,6 @@ def get_player_info(player_names):
 	if num_players > 7:
 		good_roles.append('Guinevere')
 		evil_roles.append('Agravaine')
-		good_roles.append('Guinevere')
 		evil_roles.append('Oberon')
 
 	if num_players == 10:
@@ -159,12 +160,15 @@ def get_player_info(player_names):
 
 	for p in players:
 		p.add_info(get_role_information(p,players))
+		random.shuffle(p.info)
 		print(p.name,p.role,p.team,p.info)
 
 	# Informing Evil about a Colgrevance
 	for ep in evil_players:
 		if ep.role is not 'Colgrevance' and player_of_role.get('Colgrevance'):
-			ep.add_info(['Colgrevance lurks in the shadows'])
+			ep.add_info(['Colgrevance lurks in the shadows. (There is another Evil that you do not see.)'])
+		if ep.role is not 'Colgrevance' and player_of_role.get('Titania'):
+			ep.add_info(['Titania has infiltrated your ranks. (One of the people you see is not Evil.)'])
 		if ep.is_assassin:
 			ep.add_info(['You are the Assassin.'])
 
