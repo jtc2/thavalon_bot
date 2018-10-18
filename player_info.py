@@ -97,7 +97,7 @@ def get_player_info(player_names):
 	num_good = num_players - num_evil
 
 	# establish available roles
-	good_roles = ['Merlin','Percival','Lancelot','Tristan','Iseult','Titania']
+	good_roles = ['Merlin','Percival','Lancelot','Tristan','Iseult']
 	evil_roles = ['Mordred','Morgana','Maelegant']
 
 	if num_players == 2:
