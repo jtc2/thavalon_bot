@@ -115,6 +115,7 @@ def get_player_info(player_names):
 	if num_players > 6:
 		good_roles.append('Arthur')
 		good_roles.append('Lancelot')
+		good_roles.append('Titania')
 		evil_roles.append('Maelagant')
 
 	# 8 plus 
