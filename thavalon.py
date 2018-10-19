@@ -698,13 +698,13 @@ class THavalon:
                 if len(target_names) > 0:
                     await send_invalid_assassin_msg()
                     continue
-                if 'Merlin' in self.role_to_player or 'Iseult' in self.role_to_player or 'Tristan' in self.role_to_player or 'Guinevere' in self.role_to_player:
+                if 'Merlin' in self.role_to_player or 'Iseult' in self.role_to_player or 'Tristan' in self.role_to_player or 'Guinevere' in self.role_to_player or 'Nimue' in self.role_to_player:
                     await send_incorrect_assassin_msg()
                     assassin_res = False
                 else:
                     await send_correct_assassin_msg()
                     assassin_res = True
-            elif target_role == 'Guinevere' or target_role == 'Merlin':
+            elif target_role == 'Guinevere' or target_role == 'Merlin' or target_role == 'Nimue'::
                 if len(target_names) != 1:
                     await send_invalid_assassin_msg()
                     continue
