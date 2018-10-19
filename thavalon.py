@@ -67,6 +67,10 @@ class THavalon:
         self.arthur_declared = False 
         self.num_approve = 0
         self.num_reject = 0
+        self.can_obscure = True
+        self.obscured = False 
+        self.uses_obscure = 0
+        self.max_obscure = 0 
 
     async def handle_public_message(self, message):
         # handle general messages that can be done anytime
@@ -190,6 +194,15 @@ class THavalon:
             await self.assign_player_info()
             await self.print_game_start_info(message)
             
+            if self.num_players < 7: 
+                self.max_obscure = 2
+            elif self.num_players < 10: 
+                self.max_obscure = 3 
+            elif self.num_players == 10:
+                self.max_obscure = 4 
+            else: 
+                self.max_obscure = 2
+
             
         elif message.content == "!players":
             players_string = "Players in game:\n"
@@ -297,6 +310,9 @@ class THavalon:
             if self.name_to_info[self.player_to_name[player]].role == "Oberon" and self.mission_num > 0 and self.num_failures < 2:
                 bewitch_msg = "\nYou may bewitch someone once per round by typing `!bewitch <name> <upvote/downvote>` prior to submitting your own vote. This will cause them to vote as you chose for the current proposal."
                 await self.client.send_message(player,bewitch_msg)
+            if self.name_to_info[self.player_to_name[player]].role == "Maeve" and self.mission_num > 0:
+                obscure_msg = "\nOnce per round (up to {} times per game), you may obscure how each player voted on a proposal by typing `!obscure` prior to submitting your own vote. This will cause them to vote as you chose for the current proposal.".format(self.max_obscure)
+                await self.client.send_message(player,obscure_msg)
 
 
     async def handle_received_vote(self, message):
@@ -342,6 +358,18 @@ class THavalon:
                         self.bewitch_vote = False
                     self.can_bewitch = False
                     await self.client.send_message(message.author, "You have bewitched {} to {} this proposal.\nPlease submit your own vote now.".format(self.bewitch_target,("upvote" if self.bewitch_vote else "downvote")))
+        elif message.content.startswith("!obscure") and self.name_to_info[self.player_to_name[message.author]].role == "Maeve":
+            if self.mission_num == 0: 
+                await self.client.send_message(message.author, "You may not obscure voting results on the first mission. Please submit your vote.")
+            elif not self.can_obscure: 
+                await self.client.send_message(message.author, "You have already obscured the votes on a proposal this round. Please submit your vote.")
+            elif not (self.uses_obscure < self.max_obscure):
+                await self.client.send_message(message.author, "You have already expended all uses of the obscure ability. Please submit your vote.")
+            else:
+                self.obscured = True 
+                self.can_obscure = False 
+                self.uses_obscure += 1
+                await self.client.send_message(message.author, "You have obscured the votes.\nPlease submit your own vote now.")
         else:
             await self.client.send_message(message.author, "Invalid vote, please vote again.")
 
@@ -376,12 +404,19 @@ class THavalon:
                 else:
                     rejecters.append(name)
                     self.num_reject += 1
-        vote_result_string = "The votes are in!\n" \
-                             "Upvote:\n{}" \
-                             "Downvote:\n{}" \
-                             .format("".join("\t\t{}\n".format(name) for name in accepters),
-                                     "".join("\t\t{}\n".format(name) for name in rejecters))
+        if not self.obscured: 
+            vote_result_string = "The votes are in!\n" \
+                                 "Upvote:\n{}" \
+                                 "Downvote:\n{}" \
+                                 .format("".join("\t\t{}\n".format(name) for name in accepters),
+                                         "".join("\t\t{}\n".format(name) for name in rejecters))
+        else: 
+            vote_result_string = "Maeve has obscured the votes!" \
+                                 "\n\tUpvotes: {}" \
+                                 "\n\tDownvotes: {}\n" \
+                                 .format(self.num_approve,self.num_reject)
         # reset voters
+        self.obscured = False 
         self.name_to_vote = {}
 
         mission_going_string = "\n\n{} are going on the mission! Check your messages to vote"
@@ -477,7 +512,7 @@ class THavalon:
             self.num_fail += 1
             await self.client.send_message(message.author, "You have played a fail!")
         elif message.content == "!reverse":
-            if self.name_to_info[name].role != "Lancelot" and self.name_to_info[name].role != "Maelegant":
+            if self.name_to_info[name].role != "Lancelot" and self.name_to_info[name].role != "Maelagant":
                 await self.client.send_message(message.author, "You can not play reverse, try again.")
                 return
             self.num_reverse += 1
@@ -603,6 +638,7 @@ class THavalon:
         self.num_proposals = 1
         self.guin_examinee = None
         self.can_bewitch = True
+        self.can_obscure = True
 
         # send message starting next round
         if self.mission_num == 5:
