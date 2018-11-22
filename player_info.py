@@ -11,11 +11,11 @@ def get_role_description(role):
 		'Iseult'		: 'The person you see is also Good and is aware that you are Good.\nYou and Tristan are collectively a valid Assassination target.',
 		'Merlin' 		: 'You know which people have Evil roles, but not who has any specific role.\nYou are a valid Assassination target.',
 		'Percival'		: 'You know which people have the Merlin or Morgana roles, but not specifically who has each.',
-		'Lancelot'		: 'You may play Reversal cards while on missions.',
+		'Lancelot'		: 'You may play Reversal cards while on missions.\nYou appear Evil to Merlin.',
 		'Guinevere'		: 'During each mission for which you are not on the team, you may select one player on the mission team and see the card they played.\n You are a valid Assassination target.',
 		'Arthur'		: 'You know which Good roles are in the game, but not who has any given role.\nIf two missions have Failed, and less than two missions have Succeeded, you may declare as Arthur.\nAfter declaring, your vote on team proposals is counted twice, but you are unable to be on mission teams until the 5th mission.\nAfter declaring, you are immune to any effect that can forcibly change your vote.',
 		'Titania'		: 'You appear as Evil to all players with Evil roles (except Colgrevance).',
-		'Nimue'			: 'You know which Good and Evil roles are in the game, but not who has any given role.\nYou are a valid Assassination target.',
+		'Nimue'			: 'You know which Good and Evil roles are in the game, but not who has any given role.\nYou appear Evil to Merlin.\nYou are a valid Assassination target.',
 
 		'Mordred' 		: 'You are hidden from all Good Information roles. \nLike other Evil characters, you know who else is Evil (except Colgrevance).',
 		'Morgana'		: 'You appear like Merlin to Percival. \nLike other Evil characters, you know who else is Evil (except Colgrevance).',
@@ -115,7 +115,6 @@ def get_player_info(player_names):
 	if num_players > 6:
 		good_roles.append('Arthur')
 		good_roles.append('Lancelot')
-		good_roles.append('Titania')
 		evil_roles.append('Maelagant')
 
 	# 8 plus 
