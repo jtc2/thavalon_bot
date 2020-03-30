@@ -1,5 +1,6 @@
 import discord
 import random
+from copy import copy
 from player_info import get_player_info
 
 MAX_NUM_PLAYERS = 10
@@ -17,16 +18,16 @@ game_size_to_mission = {
     10: [3, 4, 4, 5, 5],
 }
 game_size_to_num_proposals = {
-    1: 2,
-    2: 2,
+    1: 1,
+    2: 4,
     3: 2,
-    4: 2,
-    5: 3,
-    6: 3,
-    7: 4,
-    8: 4,
-    9: 4,
-    10: 5,
+    4: 4,
+    5: 4,
+    6: 6,
+    7: 8,
+    8: 10,
+    9: 12,
+    10: 14,
 }
 
 """
@@ -43,6 +44,7 @@ class THavalon:
         self.displayname_to_discorduser = {}
         self.discorduser_to_displayname = {}
         self.order = []
+        self.private_order = []
         self.proposer_idx = -2
         self.num_players = 0
         self.mission_num = 0  # 0 indexed
@@ -57,7 +59,8 @@ class THavalon:
         self.second_proposal = []
         # handle other proposals
         self.current_proposal = []
-        self.num_proposals = 0
+        self.num_proposals = 1
+        self.max_proposals = 0
         # for mission results
         self.displayname_to_vote = {}
         # for playing mission
@@ -78,14 +81,17 @@ class THavalon:
         self.obscured = False 
         self.uses_obscure = 0
         self.max_obscure = 0 
+        self.early_assassinate = False 
+        self.lovers_found = False 
 
     async def handle_public_message(self, message):
         # handle general messages that can be done anytime
         if self.game_running and self.game_state != "CREATE":
-            if message.content == "!movetoassassinate" and "admin" in [role.name for role in message.author.roles]:
+            if message.content == "!movetoassassinate" and self.displayname_to_roleinfo[message.author.display_name].is_assassin:
                 # move to assassination by setting num_passes to 3, num_fails to 0, and waiting for game to end
                 self.num_passes = 3
                 self.num_failures = 0
+                self.early_assassinate = True
                 await self.check_game_over()
             if message.content == "!declare":
                 if self.game_state != "PLAY" and self.displayname_to_roleinfo[message.author.display_name].role == "Arthur" and self.num_passes < 2 and self.num_failures == 2 and self.mission_num != 0:
@@ -105,11 +111,10 @@ class THavalon:
                         self.displayname_to_vote = {}
                         await self.client.send_message(message.channel,"\nDue to the Arthur declaration, the current mission leader may make another proposal.")
 
-                        await self.client.send_message(self.public_channel, "{}, please propose a {} player mission. This is proposal {} of {}." \
-                                      .format(self.order[self.proposer_idx],
-                                              game_size_to_mission[len(self.order)][self.mission_num],
-                                              self.num_proposals,
-                                              game_size_to_num_proposals[len(self.order)]))
+                        await self.client.send_message(self.public_channel, "{}, please propose a {} player mission. There are {} proposals remaining before force activates." \
+                                      .format(self.private_order[self.proposer_idx],
+                                              game_size_to_mission[len(self.private_order)][self.mission_num],
+                                              self.max_proposals - self.num_proposals + 1))
                 elif self.displayname_to_roleinfo[message.author.display_name].role == "Agravaine" and self.num_fail_on_mission > 0:
                     pass
                 else: 
@@ -123,7 +128,6 @@ class THavalon:
                 em.add_field(name="!players", value="List the players who have joined so far", inline=False)
                 em.add_field(name="!start", value="Start the game", inline=False)
                 await self.client.send_message(message.channel, embed=em)
-
                 self.game_running = True
             else:
                 await self.client.send_message(message.channel, "No game running, type !thavalon to start a game")
@@ -133,7 +137,10 @@ class THavalon:
             if message.content == "!thavalon":
                 await self.client.send_message(message.channel, "Game in progress. Type !stop to stop game.")
             elif message.content == "!order" and self.game_state != "CREATE":
-                await self.client.send_message(message.channel, "See pinned messages for order.")
+                if self.order:
+                    await self.client.send_message(message.channel, "See pinned messages for order.")
+                else:
+                    await self.client.send_message(message.channel, "Player order will be revealed once mission 1 results are in.")
             elif self.game_state == "CREATE":
                 await self.handle_create_message(message)
             elif self.game_state == "PROPOSE":
@@ -193,15 +200,15 @@ class THavalon:
             # update order
             self.order = list(self.displayname_to_discorduser.keys())
             random.shuffle(self.order)
-            order_string = "Player Order:\n{}".format("".join(["\t\t{}) {}\n".format(idx + 1, name) for idx, name in enumerate(self.order)]))
-            order_msg = await self.client.send_message(self.public_channel,
-                                                       embed=discord.Embed(description=order_string,
-                                                                           colour=discord.Color.dark_blue()))
-            await self.client.pin_message(order_msg)
 
             # TODO :remove
             if len(self.order) == 1:
                 self.order.append(self.order[0])
+            self.private_order = self.order  # copy order to temp order
+            self.order = []
+
+            self.num_players = len(self.private_order)
+            self.max_proposals = game_size_to_num_proposals[self.num_players]
 
             await self.assign_player_info()
             await self.print_game_start_info(message)
@@ -222,27 +229,30 @@ class THavalon:
             await self.client.send_message(message.channel, players_string)
 
     async def assign_player_info(self):
-        self.role_to_player = get_player_info(self.order)
+        self.role_to_player = get_player_info(self.private_order)
         for _, player_info in self.role_to_player.items():
             player = self.displayname_to_discorduser[player_info.name]
             self.displayname_to_roleinfo[player_info.name] = player_info
-            await self.client.send_message(player, player_info.string)
+            info_msg = await self.client.send_message(player, player_info.string)
+            #pins = await self.client.pins_from(player)
+            #async for pin in pins:
+            #    await self.client.unpin_message(pin)
+            #await self.client.pin_message(info_msg)
 
     async def print_game_start_info(self, message):
         game_beginning_message = "The game has begun. Please check your messages for your role info.\n" \
-                                "Check pinned messages for player order.\n" \
-                                 "Type !order to see the proposal order.\n\n" \
-                                 "{} and {} will be proposing teams for the first mission.\n" \
+                                 "{} and {} will be proposing teams for the first mission, and will be the last two proposers in the order.\n" \
+                                "The remainder of the order will be revealed after mission 1 is sent.\n" \
                                  "{}, please make your proposal." \
-                                 .format(self.order[-2], self.order[-1], self.order[-2])
+                                 .format(self.private_order[-2], self.private_order[-1], self.private_order[-2])
         await self.client.send_message(message.channel, game_beginning_message)
 
     # handle messages during PROPOSE state
     async def handle_propose_message(self, message):
         print("GOT PROPOSAL: {}".format(message.content))
         if message.content.startswith("!propose") and \
-           message.author.display_name == self.order[self.proposer_idx]:
-            num_on_mission = game_size_to_mission[len(self.order)][self.mission_num]
+           message.author.display_name == self.private_order[self.proposer_idx]:
+            num_on_mission = game_size_to_mission[len(self.private_order)][self.mission_num]
             proposed_str = message.content.replace("!propose ", "")
             proposed_names = proposed_str.split(" ")
             if len(proposed_names) != num_on_mission:
@@ -265,16 +275,16 @@ class THavalon:
                 self.first_proposal = proposed_names
                 await self.client.send_message(message.channel,
                                                "{} has proposed:\n{}\n{}, make your proposal."
-                                               .format(self.order[-2],
+                                               .format(self.private_order[-2],
                                                        "".join("\t\t{}\n".format(name) for name in self.first_proposal),
-                                                       self.order[-1])
+                                                       self.private_order[-1])
                                                )
                 self.proposer_idx = -1
             elif self.proposer_idx == -1:
                 self.second_proposal = proposed_names
                 await self.client.send_message(message.channel,
                                                "{} has proposed:\n{}\n\nCheck your messages to vote."
-                                               .format(self.order[-1],
+                                               .format(self.private_order[-1],
                                                        "".join("\t\t{}\n".format(name) for name in self.second_proposal),
                                                        )
                                                )
@@ -283,14 +293,14 @@ class THavalon:
                 await self.send_vote_requests(message, await self.get_first_mission_vote_string())
             else:  # not in mission 1
                 self.current_proposal = proposed_names
-                if self.num_proposals == game_size_to_num_proposals[len(self.order)]:
+                if self.num_proposals > game_size_to_num_proposals[len(self.private_order)]:
                     # last proposal
                     self.going_proposal = self.current_proposal
                     await self.client.send_message(message.channel,
                                                    "{} has proposed:\n{}\n"
-                                                   "This is the final mission of the round, it must go.\n"
+                                                   "Force has activated. This proposal is sent without voting.\n"
                                                    "If you are on the mission, check your messages to play a card.\n"
-                                                   .format(self.order[self.proposer_idx],
+                                                   .format(self.private_order[self.proposer_idx],
                                                            "".join("\t\t{}\n".format(name) for name in self.current_proposal),
                                                            ))
                     self.game_state = "PLAY"
@@ -298,7 +308,7 @@ class THavalon:
                 else:
                     await self.client.send_message(message.channel,
                                                "{} has proposed:\n{}\n\nCheck your messages to vote."
-                                               .format(self.order[self.proposer_idx],
+                                               .format(self.private_order[self.proposer_idx],
                                                        "".join("\t\t{}\n".format(name) for name in self.current_proposal),
                                                        ))
                     self.game_state = "VOTE"
@@ -308,13 +318,13 @@ class THavalon:
         return "You are voting whether to send {}'s proposal of:\n{}\n" \
                "Type !upvote to approve it.\n" \
                "Type !downvote to reject it.\n" \
-               .format(self.order[self.proposer_idx], "".join("\t\t{}\n".format(name) for name in self.current_proposal))
+               .format(self.private_order[self.proposer_idx], "".join("\t\t{}\n".format(name) for name in self.current_proposal))
 
     async def get_first_mission_vote_string(self):
         return "You are voting for which mission 1 proposal to send.\n\n" \
                "Type !upvote to vote for {}'s proposal:\n\t\t{}.\n" \
                "Type !downvote to vote for {}'s proposal of:\n\t\t{}.\n" \
-               .format(self.order[-2], ", ".join(self.first_proposal), self.order[-1], ", ".join(self.second_proposal))
+               .format(self.private_order[-2], ", ".join(self.first_proposal), self.private_order[-1], ", ".join(self.second_proposal))
 
     async def send_vote_requests(self, message, request_string):
         for player in self.discorduser_to_displayname:
@@ -323,7 +333,7 @@ class THavalon:
                 bewitch_msg = "\nYou may bewitch someone once per round by typing `!bewitch <name> <upvote/downvote>` prior to submitting your own vote. This will cause them to vote as you chose for the current proposal."
                 await self.client.send_message(player,bewitch_msg)
             if self.displayname_to_roleinfo[self.discorduser_to_displayname[player]].role == "Maeve" and self.mission_num > 0:
-                obscure_msg = "\nOnce per round (up to {} times per game), you may obscure how each player voted on a proposal by typing `!obscure` prior to submitting your own vote. This will cause them to vote as you chose for the current proposal.".format(self.max_obscure)
+                obscure_msg = "\nUp to {} times per game, you may obscure how each player voted on a proposal by typing `!obscure` prior to submitting your own vote. This will cause them to vote as you chose for the current proposal.".format(self.max_obscure)
                 await self.client.send_message(player,obscure_msg)
 
 
@@ -385,7 +395,7 @@ class THavalon:
         else:
             await self.client.send_message(message.author, "Invalid vote, please vote again.")
 
-        if len(self.displayname_to_vote) == len(self.order):
+        if len(self.displayname_to_vote) == len(self.private_order):
             if self.bewitch_target:
                 old_vote = self.displayname_to_vote[self.bewitch_target]
                 if self.bewitch_vote != old_vote:
@@ -429,6 +439,8 @@ class THavalon:
                                  .format(self.num_approve,self.num_reject)
         # reset voters
         self.obscured = False 
+        self.can_bewitch = True
+        self.can_obscure = True
         self.displayname_to_vote = {}
 
         mission_going_string = "\n\n{} are going on the mission! Check your messages to vote"
@@ -442,9 +454,20 @@ class THavalon:
                 vote_result_string += mission_going_string.format(", ".join(self.second_proposal))
             self.game_state = "PLAY"
 
+            # reset public order and send it out before the first mission goes
+            self.order = self.private_order
+            await self.client.send_message(self.public_channel,
+                                           "Before revealing mission 1 results, here is the player order.")
+            order_string = "Player Order:\n{}".format("".join(["\t\t{}) {}\n".format(idx + 1, name) for idx, name in enumerate(self.order)]))
+            order_msg = await self.client.send_message(self.public_channel,
+                                                       embed=discord.Embed(description=order_string,
+                                                                           colour=discord.Color.dark_blue()))
+            await self.client.pin_message(order_msg)
+
             await self.client.send_message(self.public_channel, vote_result_string)
             await self.send_play_requests()
         else:
+            
             # all other missions
             if self.num_approve > self.num_reject:
                 self.going_proposal = self.current_proposal
@@ -455,17 +478,24 @@ class THavalon:
                 await self.client.send_message(self.public_channel, vote_result_string)
                 await self.send_play_requests()
             else:
+                self.num_proposals += 1
                 vote_result_string += "The mission is rejected.\n\n"
                 self.game_state = "PROPOSE"
-                self.proposer_idx = (self.proposer_idx + 1) % len(self.order)
+                self.proposer_idx = (self.proposer_idx + 1) % len(self.private_order)
                 self.current_proposal = []
-                self.num_proposals += 1
-                vote_result_string += "{}, please propose a {} player mission. This is proposal {} of {}." \
-                                      .format(self.order[self.proposer_idx],
-                                              game_size_to_mission[len(self.order)][self.mission_num],
-                                              self.num_proposals,
-                                              game_size_to_num_proposals[len(self.order)])
+
                 await self.client.send_message(self.public_channel, vote_result_string)
+
+                if self.num_proposals > self.max_proposals: 
+                    await self.client.send_message(self.public_channel,"Force has activated. All remaining mission proposals will be automatically sent.\n{}, please propose a {} player mission." \
+                        .format(self.private_order[self.proposer_idx],
+                                                  game_size_to_mission[len(self.private_order)][self.mission_num]))
+                else: 
+                    await self.client.send_message(self.public_channel, "{}, please propose a {} player mission. There are {} proposals remaining before force activates." \
+                                          .format(self.private_order[self.proposer_idx],
+                                                  game_size_to_mission[len(self.private_order)][self.mission_num],
+                                                  self.max_proposals - self.num_proposals + 1))
+                
 
     async def send_play_requests(self):
         print("SENDING PLAY REQUESTS TO: {}".format(self.going_proposal))
@@ -547,6 +577,8 @@ class THavalon:
                 return
             print("NAME TO PLAY: {}".format(self.displayname_to_missioncard))
             print("S: {}, F: {}, R: {}, QB: {}".format(self.num_success_on_mission, self.num_fail_on_mission, self.num_reverse_on_mission, self.num_qb_on_mission))
+            if ('Tristan' in self.role_to_player) or ('Iseult' in self.role_to_player): 
+                await self.inform_lovers()
             if self.guin_examinee and self.guin_examinee != "none":
                 await self.inform_guinevere()
             await self.show_played_mission()
@@ -556,6 +588,46 @@ class THavalon:
         await self.client.send_message(guin_player,
                                        "{} played {}".format(self.guin_examinee,
                                                              self.displayname_to_missioncard[self.guin_examinee].replace("!", "")))
+
+    async def inform_lovers(self):
+        tristan_in_game = False
+        iseult_in_game = False
+        if 'Tristan' in self.role_to_player: 
+            tristan_player = self.role_to_player['Tristan'].name
+            tristan_channel = self.displayname_to_discorduser[tristan_player]
+            tristan_in_game = True 
+        if 'Iseult' in self.role_to_player:     
+            iseult_player = self.role_to_player['Iseult'].name
+            iseult_channel = self.displayname_to_discorduser[iseult_player]
+            iseult_in_game = True 
+
+        #print(tristan_player,iseult_player,self.going_proposal)
+        if tristan_in_game and iseult_in_game:
+            if (tristan_player in self.going_proposal) and (iseult_player in self.going_proposal) and (not self.lovers_found):
+                self.lovers_found = True
+                await self.client.send_message(iseult_channel,
+                                           "{} is Tristan, your Lover.".format(tristan_player))
+                await self.client.send_message(tristan_channel,
+                                           "{} is Iseult, your Lover.".format(iseult_player))
+            elif not self.lovers_found: 
+                if tristan_player in self.going_proposal:
+                    await self.client.send_message(iseult_channel,
+                                               "Your Lover, Tristan, was on Mission {}.".format(self.mission_num+1))
+                elif tristan_player not in self.going_proposal:
+                    await self.client.send_message(iseult_channel,
+                                               "Your Lover, Tristan, was not on Mission {}.".format(self.mission_num+1))
+                if iseult_player in self.going_proposal:
+                    await self.client.send_message(tristan_channel,
+                                               "Your Lover, Iseult, was on Mission {}.".format(self.mission_num+1))
+                elif iseult_player not in self.going_proposal:
+                    await self.client.send_message(tristan_channel,
+                                               "Your Lover, Iseult, was not on Mission {}.".format(self.mission_num+1))
+        elif tristan_in_game: 
+            #await self.client.send_message(tristan_channel,"Your Lover, Iseult, was not on Mission {}.".format(self.mission_num+1))
+            await self.client.send_message(tristan_channel,"You do not have a Lover this game.".format(self.mission_num+1))
+        elif iseult_in_game: 
+            #await self.client.send_message(iseult_channel,"Your Lover, Tristan, was not on Mission {}.".format(self.mission_num+1))
+            await self.client.send_message(iseult_channel,"You do not have a Lover this game.".format(self.mission_num+1))
 
     async def show_played_mission(self):
         result_str = "The following team went on a mission:\n{}\nThe cards played were:\n".format("".join("\t\t{}\n".format(name) for name in self.going_proposal))
@@ -573,12 +645,12 @@ class THavalon:
         result = True
         self.saved_reverse = self.num_reverse_on_mission
         self.num_reverse_on_mission = self.num_reverse_on_mission % 2
-        if self.mission_num != 3 or len(self.order) < 7:
+        if self.mission_num != 3 or len(self.private_order) < 7:
             if self.num_fail_on_mission > 0 and self.num_reverse_on_mission == 0:
                 result = False
             if self.num_fail_on_mission == 0 and self.num_reverse_on_mission == 1:
                 result = False
-        elif self.mission_num == 3 and len(self.order) >= 7:
+        elif self.mission_num == 3 and len(self.private_order) >= 7:
             if self.num_fail_on_mission >= 2 and self.num_reverse_on_mission == 0:
                 result = False
             if self.num_fail_on_mission == 1 and self.num_reverse_on_mission == 1:
@@ -599,7 +671,7 @@ class THavalon:
                 return False
             return True
 
-        if ("Agravaine" in self.role_to_player or len(self.order) >= 8) and result and self.num_fail_on_mission > 0:
+        if ("Agravaine" in self.role_to_player or len(self.private_order) >= 8) and result and self.num_fail_on_mission > 0:
             await self.client.send_message(self.public_channel, "If you are Agravaine and would like to declare, type !declare in chat. You have 30 seconds.")
             message = await self.client.wait_for_message(timeout=30, channel=self.public_channel, check=agravaine_check)
             if message is None:
@@ -624,22 +696,25 @@ class THavalon:
 
     async def check_game_over(self):
         if self.num_passes == 3:
-            assassin_res = await self.check_assassination()
+
+            assassin_res = await self.check_assassination(self.early_assassinate)
+
             if assassin_res:
                 self.num_failures = 3
             else:
                 await self.client.send_message(self.public_channel, "The game has ended! The \"Good\" team has won!")
-                self.game_running = False
                 await self.print_game_over_info()
+                self.__init__(self.client)
                 return
         if self.num_failures == 3:
             await self.client.send_message(self.public_channel, "The game has ended! The \"Evil\" team has won!")
-            self.game_running = False
             await self.print_game_over_info()
+            self.__init__(self.client)
             return
 
 
-        # reset stuff
+        # reset ongoing stats 
+        # do not reset game-static things like uses/lovers/arthur
         self.going_proposal = []
         self.num_fail_on_mission = 0
         self.num_success_on_mission = 0
@@ -647,9 +722,9 @@ class THavalon:
         self.num_qb_on_mission = 0
         self.displayname_to_missioncard = {}
         self.mission_num += 1
-        self.proposer_idx = (self.proposer_idx + 1) % len(self.order)
+        self.proposer_idx = (self.proposer_idx + 1) % len(self.private_order)
         self.current_proposal = []
-        self.num_proposals = 1
+        #self.num_proposals = 1
         self.guin_examinee = None
         self.can_bewitch = True
         self.can_obscure = True
@@ -660,14 +735,21 @@ class THavalon:
             self.game_running = False
             return
         self.game_state = "PROPOSE"
-        await self.client.send_message(self.public_channel,
-                                 "Mission {} has {} players.\n{} is proposing first.\nThere are {} proposals this round."
+        if self.num_proposals > self.max_proposals: 
+            await self.client.send_message(self.public_channel,
+                                 "Mission {} has {} players.\n{} is proposing.\nForce has activated and this proposal will be sent without voting."
                                  .format(self.mission_num + 1,
-                                         game_size_to_mission[len(self.order)][self.mission_num],
-                                         self.order[self.proposer_idx],
-                                         game_size_to_num_proposals[len(self.order)]))
+                                         game_size_to_mission[len(self.private_order)][self.mission_num],
+                                         self.private_order[self.proposer_idx]))
+        else: 
+            await self.client.send_message(self.public_channel,
+                                 "Mission {} has {} players.\n{} is proposing first.\nForce activates after {} rejected proposals."
+                                 .format(self.mission_num + 1,
+                                         game_size_to_mission[len(self.private_order)][self.mission_num],
+                                         self.private_order[self.proposer_idx],
+                                         self.max_proposals - self.num_proposals + 1))
 
-    async def check_assassination(self):
+    async def check_assassination(self,early_assassinate):
         print("CHECKING ASSASSINATION")
         assassin = None
         for player in self.role_to_player:
@@ -677,7 +759,7 @@ class THavalon:
         print("ASSASSIN: {}".format(assassin))
         await self.client.send_message(self.public_channel,
                                        embed=discord.Embed(description="Evil now has a chance to assassinate someone.\n"
-                                                                       "To assassinate someone, type !assassinate <role> <players>.\n"
+                                                                       "To assassinate someone, type !assassinate <players> <role>.\n"
                                                                        "<@{}> is the assassin!".format(self.displayname_to_discorduser[assassin].id),
                                                            color=discord.Color.dark_blue()))
 
@@ -701,33 +783,66 @@ class THavalon:
                 return True
 
         assassin_res = None
-        while assassin_res is None:
+        incorrect_assassinations = 0 
+        correct_assassinations = 0
+
+        good_roles_in_game = []
+        for role in self.role_to_player:
+            if self.role_to_player[role].team == "Good":
+                good_roles_in_game.append(role)
+
+        protected_roles = ['Titania','Lancelot','Arthur']
+        protected_players = []
+        while incorrect_assassinations == 0:
+            #parse message from assassin
             msg = await self.client.wait_for_message(check=check_assassin_msg)
             print("MSG RECEIVED: {}".format(msg.content))
             content = msg.content.replace("!assassinate ", "")
             split_content = content.split(" ")
-            target_role = split_content[0]
-            target_names = split_content[1:]
-            if target_role == 'None':
+            target_role = split_content[-1]
+            target_names = split_content[:-1]
+
+            # check validity of assassination
+            if target_role in protected_roles: 
+                await send_invalid_assassin_msg()
+                continue
+            elif target_names in protected_players: 
+                await send_invalid_assassin_msg()
+                continue
+            elif target_role == 'None':
                 if len(target_names) > 0:
                     await send_invalid_assassin_msg()
                     continue
-                if 'Merlin' in self.role_to_player or 'Iseult' in self.role_to_player or 'Tristan' in self.role_to_player or 'Guinevere' in self.role_to_player or 'Nimue' in self.role_to_player:
+                if len(set(good_roles_in_game)-set(protected_roles)) > 0:
                     await send_incorrect_assassin_msg()
-                    assassin_res = False
+                    incorrect_assassinations += 1
                 else:
                     await send_correct_assassin_msg()
-                    assassin_res = True
-            elif target_role == 'Guinevere' or target_role == 'Merlin' or target_role == 'Nimue':
+                    correct_assassinations += 1
+            elif target_role == 'Arthur':
+                if self.arthur_declared:
+                    await send_invalid_assassin_msg()
+                    continue
+                elif target_role in self.role_to_player and self.role_to_player[target_role].name == target_names[0]:
+                    await send_correct_assassin_msg()
+                    correct_assassinations += 1
+                    protected_roles.append(target_role)
+                    protected_players.append(target_names)
+                else:
+                    await send_incorrect_assassin_msg()
+                    incorrect_assassinations += 1
+            elif target_role != 'Lovers':
                 if len(target_names) != 1:
                     await send_invalid_assassin_msg()
                     continue
                 if target_role in self.role_to_player and self.role_to_player[target_role].name == target_names[0]:
                     await send_correct_assassin_msg()
-                    assassin_res = True
+                    correct_assassinations += 1
+                    protected_players.append(target_names)
+                    protected_roles.append(target_role)
                 else:
                     await send_incorrect_assassin_msg()
-                    assassin_res = False
+                    incorrect_assassinations += 1
             elif target_role == 'Lovers':
                 if len(target_names) != 2:
                     await send_invalid_assassin_msg()
@@ -735,14 +850,22 @@ class THavalon:
                 if 'Iseult' in self.role_to_player and 'Tristan' in self.role_to_player and \
                         self.role_to_player['Iseult'].name in target_names and self.role_to_player['Tristan'].name in target_names:
                     await send_correct_assassin_msg()
-                    assassin_res = True
+                    correct_assassinations += 1
+                    protected_players.append(target_names)
+                    protected_roles.append(target_role)
                 else:
                     await send_incorrect_assassin_msg()
-                    assassin_res = False
+                    incorrect_assassinations += 1
             else:
                 await send_invalid_assassin_msg()
 
-        return assassin_res
+            # evaluate state of assassination 
+            if early_assassinate and (correct_assassinations > 0): 
+                return True 
+            elif (not early_assassinate) and (correct_assassinations > 1):
+                return True 
+
+        return False
 
     async def print_game_over_info(self):
         good = []
