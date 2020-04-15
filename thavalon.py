@@ -7,7 +7,7 @@ MAX_NUM_PLAYERS = 10
 MIN_NUM_PLAYERS = 5
 game_size_to_mission = {
     1: [1, 1, 1, 1, 1],
-    2: [1, 1, 2, 1, 2],
+    2: [1, 2, 2, 1, 2],
     3: [2, 2, 2, 2, 2],
     4: [2, 2, 2, 2, 2],
     5: [2, 3, 2, 3, 3],
@@ -22,7 +22,7 @@ game_size_to_num_proposals = {
     2: 4,
     3: 2,
     4: 4,
-    5: 4,
+    5: 5,
     6: 6,
     7: 8,
     8: 10,
@@ -45,6 +45,7 @@ class THavalon:
         self.discorduser_to_displayname = {}
         self.order = []
         self.private_order = []
+        self.priority_target = ''
         self.proposer_idx = -2
         self.num_players = 0
         self.mission_num = 0  # 0 indexed
@@ -81,6 +82,13 @@ class THavalon:
         self.obscured = False 
         self.uses_obscure = 0
         self.max_obscure = 0 
+        #self.rally_target = ""
+        self.rallied_targets = []
+        self.can_rally = True
+        self.cursed_targets = []
+        self.current_cursed = [] 
+        self.can_curse = True
+        self.titania_informed = False 
         self.early_assassinate = False 
         self.lovers_found = False 
 
@@ -149,9 +157,101 @@ class THavalon:
     async def handle_private_message(self, message):
         print("MESSAGE RECEIVED: {} from {} in state {}".format(message.content, message.author, self.game_state))
         if self.game_state == "VOTE":
-            await self.handle_received_vote(message)
+            # rally while waiting for a proposal
+            if message.content.startswith("!rally") and self.displayname_to_roleinfo[self.discorduser_to_displayname[message.author]].role == "Bedivere": 
+                rally_parse = message.content.replace("!rally ", "").split(" ")
+                rally_target = rally_parse[0]
+                await self.bedivere_rally(rally_target,message.author)
+            elif message.content.startswith("!curse") and self.displayname_to_roleinfo[self.discorduser_to_displayname[message.author]].role == "Balor": 
+                curse_parse = message.content.replace("!curse ", "").split(" ")
+                curse_targets = [curse_parse[0],curse_parse[1]]
+                await self.balor_curse(curse_targets,message.author)
+            else: 
+                await self.handle_received_vote(message)
         elif self.game_state == "PLAY":
             await self.handle_received_play(message)
+        elif self.game_state == "PROPOSE":
+
+            # rally while waiting for a proposal
+            if message.content.startswith("!rally") and self.displayname_to_roleinfo[self.discorduser_to_displayname[message.author]].role == "Bedivere": 
+                rally_parse = message.content.replace("!rally ", "").split(" ")
+                rally_target = rally_parse[0]
+                await self.bedivere_rally(rally_target,message.author)
+            elif message.content.startswith("!curse") and self.displayname_to_roleinfo[self.discorduser_to_displayname[message.author]].role == "Balor": 
+                curse_parse = message.content.replace("!curse ", "").split(" ")
+                curse_targets = [curse_parse[0],curse_parse[1]]
+                await self.balor_curse(curse_targets,message.author)
+
+    async def bedivere_rally(self,rally_target,author): 
+        if (not self.can_rally): 
+            await self.client.send_message(author, "You have already rallied this round.")
+            return 
+        elif self.mission_num == 0: 
+            await self.client.send_message(author, "You may not rally on the first mission. Please submit your vote.")
+            return 
+        elif rally_target not in self.displayname_to_discorduser:
+            await self.client.send_message(author, "The targeted player is not in the game. Please try again.")
+            return 
+        elif rally_target == self.private_order[self.proposer_idx]: 
+            await self.client.send_message(author, "The targeted player already has the current proposal. Please try again.")
+            return 
+        elif rally_target in self.rallied_targets: 
+            await self.client.send_message(author, "You have already rallied that player this game. Please try again.")
+            return
+        elif self.num_proposals > self.max_proposals:
+            await self.client.send_message(author, "You cannot rally once Force has activated.")
+            return
+        else: 
+            await self.client.send_message(author, "You have rallied {}.".format(rally_target))
+            if self.game_state == "VOTE":
+                self.game_state = "PROPOSE"
+                self.current_proposal = []
+                self.displayname_to_vote = {}
+            self.can_rally = False 
+            self.rallied_targets.append(rally_target)
+            # announce 
+            rally_message = "Bedivere has granted a proposal to {}.\nBe aware that the proposal order has changed, check pinned messages for the new order.".format(rally_target)
+            await self.client.send_message(self.public_channel, rally_message)
+            #self.private_order.remove(rally_target)
+            self.private_order.insert(self.proposer_idx,self.private_order.pop(self.private_order.index(rally_target)))
+            await self.client.unpin_message(self.order_msg)
+            order_string = "Player Order:\n{}".format("".join(["\t\t{}) {}\n".format(idx + 1, name) for idx, name in enumerate(self.private_order)]))
+            self.order_msg = await self.client.send_message(self.public_channel,
+                                                   embed=discord.Embed(description=order_string,
+                                                                       colour=discord.Color.dark_blue()))
+            await self.client.pin_message(self.order_msg)
+
+    async def balor_curse(self,curse_targets,author): 
+        if (not self.can_curse): 
+            await self.client.send_message(author, "You have already cursed players this round.")
+            return 
+        elif self.mission_num == 0: 
+            await self.client.send_message(author, "You may not curse players on the first mission. Please submit your vote.")
+            return 
+        elif curse_targets[0] not in self.displayname_to_discorduser or curse_targets[1] not in self.displayname_to_discorduser:
+            await self.client.send_message(author, "At least one of the targeted players is not in the game. Please try again.")
+            return 
+        elif curse_targets[0] == curse_targets[1]: 
+            await self.client.send_message(author, "You must curse two different players. Please try again.")
+            return 
+        elif curse_targets[0] in self.cursed_targets or curse_targets[1] in self.cursed_targets: 
+            await self.client.send_message(author, "You have already cursed at least one of these players this game. Please try again.")
+            return
+        elif self.num_failures >= 2:
+            await self.client.send_message(author, "You cannot curse anyone once two missions have Failed.")
+            return
+        else: 
+            await self.client.send_message(author, "You have cursed {} and {}.".format(curse_targets[0],curse_targets[1]))
+            if self.game_state == "VOTE":
+                    self.game_state = "PROPOSE"
+                    self.current_proposal = []
+                    self.displayname_to_vote = {}
+            self.can_curse = False 
+            self.cursed_targets.append(curse_targets[0])
+            self.cursed_targets.append(curse_targets[1])
+            self.current_cursed = curse_targets
+            curse_message = "Balor has cursed {} and {}. They may not be on proposals together for the rest of the round.\n{}, please propose again.".format(curse_targets[0],curse_targets[1],self.private_order[self.proposer_idx])
+            await self.client.send_message(self.public_channel,curse_message)
 
     # handle messages related to game creation
     async def handle_create_message(self, message):
@@ -194,6 +294,8 @@ class THavalon:
 
             # clear all previous pins
             pins = await self.client.pins_from(self.public_channel)
+
+            print(pins)
             for pin in pins:
                 await self.client.unpin_message(pin)
 
@@ -229,7 +331,7 @@ class THavalon:
             await self.client.send_message(message.channel, players_string)
 
     async def assign_player_info(self):
-        self.role_to_player = get_player_info(self.private_order)
+        self.role_to_player, self.priority_target = get_player_info(self.private_order)
         for _, player_info in self.role_to_player.items():
             player = self.displayname_to_discorduser[player_info.name]
             self.displayname_to_roleinfo[player_info.name] = player_info
@@ -261,6 +363,10 @@ class THavalon:
             if len(list(set(proposed_names))) != len(proposed_names):
                 await self.client.send_message(message.channel, "Duplicate players - each player may only occupy a single spot on the mission. Propose again.")
                 return
+            if len(self.current_cursed) > 0: 
+                if self.current_cursed[0] in proposed_names and self.current_cursed[1] in proposed_names: 
+                    await self.client.send_message(message.channel, "{} and {} cannot be on mission proposals together this round. Propose again.".format(self.current_cursed[0],self.current_cursed[1]))
+                    return 
             for name in proposed_names:
                 if name not in self.displayname_to_discorduser:
                     await self.client.send_message(message.channel, "Invalid players - all players must be in game. Propose again.")
@@ -380,6 +486,7 @@ class THavalon:
                         self.bewitch_vote = False
                     self.can_bewitch = False
                     await self.client.send_message(message.author, "You have bewitched {} to {} this proposal.\nPlease submit your own vote now.".format(self.bewitch_target,("upvote" if self.bewitch_vote else "downvote")))
+            return 
         elif message.content.startswith("!obscure") and self.displayname_to_roleinfo[self.discorduser_to_displayname[message.author]].role == "Maeve":
             if self.mission_num == 0: 
                 await self.client.send_message(message.author, "You may not obscure voting results on the first mission. Please submit your vote.")
@@ -392,8 +499,63 @@ class THavalon:
                 self.can_obscure = False 
                 self.uses_obscure += 1
                 await self.client.send_message(message.author, "You have obscured the votes.\nPlease submit your own vote now.")
+            return
         else:
             await self.client.send_message(message.author, "Invalid vote, please vote again.")
+            return
+
+        # here be titania vote knowledge 
+        if ('Titania' in self.role_to_player) and (not self.titania_informed): 
+            # titania waited for info 
+            if (len(self.displayname_to_vote) == len(self.private_order) - 1) and (self.role_to_player['Titania'].name not in self.displayname_to_vote): 
+                accepters = [] 
+                rejecters = [] 
+                for name, vote in self.displayname_to_vote.items():
+                    if self.displayname_to_roleinfo[name].role == "Arthur" and self.arthur_declared:
+                        if vote:
+                            accepters.append("{} (x2)".format(name))
+                        else:
+                            rejecters.append("{} (x2)".format(name))
+                    else:
+                        if vote:
+                            accepters.append(name)
+                        else:
+                            rejecters.append(name) 
+                vote_result_string = "Here is how everyone else voted on this proposal:\n" \
+                                 "Upvote:\n{}" \
+                                 "Downvote:\n{}" \
+                                 .format("".join("\t\t{}\n".format(name) for name in accepters),
+                                         "".join("\t\t{}\n".format(name) for name in rejecters))
+
+                await self.client.send_message(self.displayname_to_discorduser[self.role_to_player['Titania'].name],vote_result_string)
+                self.titania_informed = True
+
+            # titania voted before receiving info 
+            elif (len(self.displayname_to_vote) == len(self.private_order)) and (self.role_to_player['Titania'].name in self.displayname_to_vote): 
+                accepters = [] 
+                rejecters = [] 
+                for name, vote in self.displayname_to_vote.items():
+                    if name != self.role_to_player['Titania'].name: 
+                        if self.displayname_to_roleinfo[name].role == "Arthur" and self.arthur_declared:
+                            if vote:
+                                accepters.append("{} (x2)".format(name))
+                            else:
+                                rejecters.append("{} (x2)".format(name))
+                        else:
+                            if vote:
+                                accepters.append(name)
+                            else:
+                                rejecters.append(name) 
+                    vote_result_string = "Here is how everyone else voted on this proposal:\n" \
+                                 "Upvote:\n{}" \
+                                 "Downvote:\n{}" \
+                                 .format("".join("\t\t{}\n".format(name) for name in accepters),
+                                         "".join("\t\t{}\n".format(name) for name in rejecters))
+
+                await self.client.send_message(self.displayname_to_discorduser[self.role_to_player['Titania'].name],vote_result_string)
+                self.titania_informed = True
+            else: 
+                pass
 
         if len(self.displayname_to_vote) == len(self.private_order):
             if self.bewitch_target:
@@ -403,6 +565,7 @@ class THavalon:
                     await self.client.send_message(self.displayname_to_discorduser[self.bewitch_target],"Oberon has changed your vote to {}.".format("**upvote**" if self.bewitch_vote else "**downvote**"))
             self.bewitch_target = ""
             self.bewitch_vote = False
+            self.titania_informed = False 
             print("VOTES ARE IN: {}".format(self.displayname_to_vote))
             await self.determine_vote_result()
 
@@ -439,7 +602,7 @@ class THavalon:
                                  .format(self.num_approve,self.num_reject)
         # reset voters
         self.obscured = False 
-        self.can_bewitch = True
+        #self.can_bewitch = True
         self.can_obscure = True
         self.displayname_to_vote = {}
 
@@ -459,10 +622,10 @@ class THavalon:
             await self.client.send_message(self.public_channel,
                                            "Before revealing mission 1 results, here is the player order.")
             order_string = "Player Order:\n{}".format("".join(["\t\t{}) {}\n".format(idx + 1, name) for idx, name in enumerate(self.order)]))
-            order_msg = await self.client.send_message(self.public_channel,
+            self.order_msg = await self.client.send_message(self.public_channel,
                                                        embed=discord.Embed(description=order_string,
                                                                            colour=discord.Color.dark_blue()))
-            await self.client.pin_message(order_msg)
+            await self.client.pin_message(self.order_msg)
 
             await self.client.send_message(self.public_channel, vote_result_string)
             await self.send_play_requests()
@@ -727,7 +890,10 @@ class THavalon:
         #self.num_proposals = 1
         self.guin_examinee = None
         self.can_bewitch = True
-        self.can_obscure = True
+        #self.can_obscure = True
+        self.can_rally = True 
+        self.can_curse = True
+        self.current_cursed = []
 
         # send message starting next round
         if self.mission_num == 5:
@@ -757,6 +923,8 @@ class THavalon:
                 assassin = self.role_to_player[player].name
                 break
         print("ASSASSIN: {}".format(assassin))
+
+        self.game_state = 'ASSASSINATION'
         await self.client.send_message(self.public_channel,
                                        embed=discord.Embed(description="Evil now has a chance to assassinate someone.\n"
                                                                        "To assassinate someone, type !assassinate <players> <role>.\n"
@@ -778,21 +946,43 @@ class THavalon:
                                            embed=discord.Embed(description="Assassination was correct!",
                                                                color=discord.Color.dark_blue()))
 
+        async def send_priority_assassination_needed():
+            await self.client.send_message(self.public_channel,
+                                           embed=discord.Embed(description="Assassination was correct! You now need to kill your Priority Target, {}.".format(self.priority_target),
+                                                               color=discord.Color.dark_blue()))
+
+        async def send_secondary_assassination_needed():
+            await self.client.send_message(self.public_channel,
+                                           embed=discord.Embed(description="Assassination was correct! You now need to any other role.",
+                                                               color=discord.Color.dark_blue()))
+
+
         def check_assassin_msg(msg):
             if msg.content.startswith("!assassinate ") and msg.author.display_name == assassin:
                 return True
 
         assassin_res = None
         incorrect_assassinations = 0 
-        correct_assassinations = 0
+        #correct_assassinations = 0
+
+        priority_assassination = False 
+        secondary_assassination = False 
 
         good_roles_in_game = []
         for role in self.role_to_player:
             if self.role_to_player[role].team == "Good":
                 good_roles_in_game.append(role)
 
-        protected_roles = ['Titania','Lancelot','Arthur']
+        protected_roles = ['Lancelot']
         protected_players = []
+        #players = [p.name for r,p in self.role_to_player]
+
+        # print(players)
+
+        if self.arthur_declared: 
+            protected_roles.append('Arthur')
+            protected_players.append(self.role_to_player['Arthur'].name)
+
         while incorrect_assassinations == 0:
             #parse message from assassin
             msg = await self.client.wait_for_message(check=check_assassin_msg)
@@ -802,6 +992,79 @@ class THavalon:
             target_role = split_content[-1]
             target_names = split_content[:-1]
 
+            #if target_names not in players:
+            #    await send_invalid_assassin_msg()
+            #    continue
+            if target_role in protected_roles: 
+                await send_invalid_assassin_msg()
+                continue 
+            elif any([p in protected_players for p in target_names]): 
+                await send_invalid_assassin_msg() 
+                continue
+            elif target_role == 'None':
+                if len(target_names) > 0:
+                    await send_invalid_assassin_msg()
+                    continue 
+                if len(set(good_roles_in_game)-set(protected_roles)) > 0: 
+                    await send_incorrect_assassin_msg()
+                    incorrect_assassinations += 1 
+                else: 
+                    await send_correct_assassin_msg()
+                    correct_assassinations += 1 
+            elif secondary_assassination and not priority_assassination and target_role != self.priority_target: 
+                await send_priority_assassination_needed()
+                continue
+            elif target_role == 'Lovers': 
+                if len(target_names) != 2:
+                    await send_invalid_assassin_msg()
+                    continue
+                elif 'Iseult' in self.role_to_player and 'Tristan' in self.role_to_player and \
+                        self.role_to_player['Iseult'].name in target_names and self.role_to_player['Tristan'].name in target_names:
+                    await send_correct_assassin_msg()
+                    protected_players.append(target_names)
+                    protected_roles.append(target_role)
+
+                    if self.priority_target == 'Lovers': 
+                        priority_assassination = True 
+                    else: 
+                        secondary_assassination = True 
+                else: 
+                    await send_incorrect_assassin_msg()
+                    incorrect_assassinations += 1
+            elif target_role != 'Lovers': 
+                if len(target_names) != 1:
+                    await send_invalid_assassin_msg()
+                    continue
+                elif target_role in self.role_to_player and self.role_to_player[target_role].name in target_names:
+                    await send_correct_assassin_msg()
+                    protected_players.append(target_names)
+                    protected_roles.append(target_role)
+
+                    if (target_role == 'Merlin' and self.priority_target == 'Merlin') or \
+                        (target_role == 'Guinevere' and self.priority_target == 'Guinevere'): 
+                        priority_assassination = True 
+                    else: 
+                        secondary_assassination = True 
+                else: 
+                    await send_incorrect_assassin_msg()
+                    incorrect_assassinations += 1
+            else: 
+                await send_invalid_assassin_msg()
+
+            if self.early_assassinate and (priority_assassination or secondary_assassination): 
+                return True
+            elif (not self.early_assassinate) and priority_assassination and secondary_assassination:
+                return True
+            elif (not self.early_assassinate) and priority_assassination and not secondary_assassination: 
+                await send_secondary_assassination_needed() 
+            elif (not self.early_assassinate) and not priority_assassination and secondary_assassination: 
+                await send_priority_assassination_needed()
+
+        return False 
+                  
+
+
+        '''
             # check validity of assassination
             if target_role in protected_roles: 
                 await send_invalid_assassin_msg()
@@ -856,16 +1119,30 @@ class THavalon:
                 else:
                     await send_incorrect_assassin_msg()
                     incorrect_assassinations += 1
+            elif target_role == 'Bedivere':
+                if not self.early_assassinate: 
+                    await send_invalid_assassin_msg() 
+                    continue
+                elif target_role in self.role_to_player and self.role_to_player[target_role].name == target_names[0]:
+                    await send_correct_assassin_msg()
+                    correct_assassinations += 1
+                    protected_players.append(target_names)
+                    protected_roles.append(target_role)
+                else: 
+                    await send_incorrect_assassin_msg()
+                    incorrect_assassinations += 1
+
             else:
                 await send_invalid_assassin_msg()
 
             # evaluate state of assassination 
-            if early_assassinate and (correct_assassinations > 0): 
+        
+            if self.early_assassinate and (priority_assassination or secondary_assassination): 
                 return True 
-            elif (not early_assassinate) and (correct_assassinations > 1):
+            elif (not self.early_assassinate) and priority_assassination and secondary_assassination:
                 return True 
-
-        return False
+        '''
+        #return False
 
     async def print_game_over_info(self):
         good = []
